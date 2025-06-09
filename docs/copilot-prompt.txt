@@ -6,18 +6,17 @@ This project is a live demo web app that uses webcam input to extract dominant c
 📄 Instructions:
 Follow `.github/copilot-instructions.md`. Do not repeat or reinterpret the requirements—use the guidelines as the single source of truth.
 
-🧪 Use Context7 MCP for all code involving Java, Spring Boot, HTML/DOM APIs, and Puppeteer.
+🧪 Use Context7 MCP for all code involving Java, Spring Boot, HTML/DOM APIs.
 
 ---
 
 ✅ Let’s begin step by step:
 
 1. Think out loud: describe the responsibilities of the backend.
-2. Outline the structure of the backend (main class, controller, test scaffolding).
+2. Outline the structure of the backend (main class, controller).
 3. Implement the `POST /color` endpoint using Spring Boot 3.5 and Java 21.
 4. Use `RestClient` to send the appropriate query parameters to the bulb.
-5. Generate JUnit 5 tests for the controller using realistic cases.
-6. Once backend is complete and tests pass, move to frontend HTML/JS and UI testing.
+6. Once backend is complete, move to frontend HTML/JS.
 
 ⚠️ Constraints:
 - No mDNS, no WebSockets, no databases, no Docker.
