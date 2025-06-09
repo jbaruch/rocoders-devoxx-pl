@@ -24,3 +24,8 @@
     Please DO NOT start a new phase until i explicitly ask you
 ```
 
+## follow up prompt for discovery service
+
+```
+    Сurrently we use hadcoded api for light bulb. Shelly bulb supports discovery via mdns. Implement logic using jmdns library (ask context7 for documentation). make sure don't bind to localhost interface (it wont' be able to dicover in local network). also cleanup ui - keep it on point and remove distracting elements.     
+``
