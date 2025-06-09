@@ -42,13 +42,20 @@ This project assumes:
 ## 🌐 Frontend Responsibilities (HTML + JS)
 
 * Use plain HTML/JS with optional `htm/preact` or `lit-html` (from CDN).
-* Use `getUserMedia()` for webcam access.
-* Use `enumerateDevices()` to show a **camera selector dropdown**.
 * Show a live preview of the detected color.
 * Button to manually send RGBW color to backend.
 * Auto mode sends color every 3 seconds.
 * Create a full-screen layout with large, visible components for demo purposes.
 * Make slick, modern UI with clear visual feedback.
+
+### 📹 Camera Access Implementation
+
+Use the **WebRTC MediaDevices API** for all webcam functionality. 
+Key patterns: 
+- `navigator.mediaDevices.getUserMedia({ video: true })` for basic access, 
+`enumerateDevices()` filtered by `kind === 'videoinput'` for camera selection dropdown, and `deviceId: { exact: selectedId }` constraints for camera switching. 
+- Always implement proper stream management (store in variable, stop tracks when switching), error handling with try/catch blocks, and check browser compatibility (`!!navigator.mediaDevices`). 
+- Connect streams to video elements via `srcObject` property.
 
 ### ✅ Frontend Testing
 
