@@ -2,6 +2,17 @@
 
 This specification outlines a practical and impressive application for a 1-hour Vibecoding conference demo using agentic AI IDEs. The app controls a Shelly Duo GU10 RGBW smart bulb based on real-time color extraction from a webcam feed.
 
+**Include:**
+
+* Simple color extraction (e.g. Color Thief)
+* Show color preview box
+* Input field for entering the Shelly bulb IP address manually
+* Toggle switch: Manual / Auto
+* Button: "Send to Bulb" (only enabled in manual mode)
+* If Auto mode is enabled, send color every 3 seconds
+* Camera Selection: Dropdown to select from available cameras (`navigator.mediaDevices.enumerateDevices()`)
+* **UI optimized for large screen demos:** full-screen layout with large, clearly visible components (preview box, toggle, and buttons)
+
 ---
 
 ## Project Goal
@@ -32,7 +43,11 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 * WebSocket
 * Health checks / Actuator / Prometheus
 * Redis, PostgreSQL, Docker, MQTT
-* mDNS-based discovery logic
+
+**Discovery Implementation Notes:**
+
+* Use JmDNS after researching it with context7
+* Important: Java mDNS must bind to correct network interface (not loopback 127.0.0.1). Auto-select non-loopback, site-local interface for JmDNS binding
 
 ---
 
@@ -54,8 +69,7 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 * WebSockets
 * K-means, OffscreenCanvas, Web Workers
 * HSL, Kelvin, or complex color math
-* Camera constraint configuration
-* mDNS discovery integration
+* Camera constraint configuration beyond device selection
 
 ---
 
