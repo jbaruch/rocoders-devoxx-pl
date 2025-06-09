@@ -1,0 +1,144 @@
+# .windsurfrules - RGBW Control App
+
+## Agent Environment
+
+- **Target**: Windsurf Agent Mode with Context7 MCP preconfigured
+- **Project Goal**: Web app that uses webcam to detect dominant color and control a Shelly Duo GU10 RGBW bulb over local network
+- **Design Philosophy**: Intentionally simple for live coding demo - exclude all complexity (cloud sync, discovery, error resilience, persistence)
+- **API Lookups**: All technology documentation must be retrieved using Context7 (Spring Boot APIs, frontend framework APIs, etc.)
+
+## Backend
+
+### Technology Stack
+- **Language**: Java 21
+- **Framework**: Spring Boot 3.5
+- **HTTP Client**: RestClient (Spring Boot 3.5 native)
+
+### Implementation Requirements
+- **Core Endpoint**: `POST /color` accepting RGB data from frontend
+- **Shelly Integration**: HTTP calls to `http://<bulb-ip>/light/0` endpoint
+- **Error Handling**: Basic try/catch blocks and timeout configuration only
+- **Architecture**: Single REST controller with minimal service layer
+
+### What to Include
+- REST endpoint for color processing
+- RestClient configuration for Shelly API calls
+- Basic error handling with try/catch
+- Timeout configuration for HTTP calls
+- Simple CORS configuration for frontend communication
+
+### What to Exclude
+- Circuit breakers or resilience patterns
+- Connection pooling configuration
+- WebSocket implementations
+- Health checks, Actuator, or Prometheus
+- Database integration (Redis, PostgreSQL)
+- Docker containerization
+- MQTT messaging
+- mDNS-based device discovery
+- Complex logging or monitoring
+
+## Frontend
+
+### Technology Stack
+- **Base**: HTML + JavaScript (vanilla or lightweight framework)
+- **Suggested Frameworks**: htm/preact, lit-html, or similar lightweight options
+- **Camera Access**: getUserMedia API
+- **Color Extraction**: Color Thief library or equivalent
+
+### Implementation Requirements
+- **Layout**: Full-screen layout optimized for large screen demos
+- **Components**: Large, clearly visible UI elements (preview box, toggle, buttons)
+- **Camera Integration**: Webcam access via getUserMedia
+- **Color Processing**: Simple color extraction without complex algorithms
+- **User Controls**: Manual IP input, Manual/Auto toggle, Send button
+- **Auto Mode**: Send color every 3 seconds when enabled
+- **Manual Mode**: Send button only enabled in manual mode
+
+### What to Include
+- getUserMedia implementation for webcam access
+- Simple color extraction (e.g., Color Thief)
+- Color preview box display
+- IP address input field for Shelly bulb
+- Toggle switch for Manual/Auto modes
+- "Send to Bulb" button (manual mode only)
+- Automatic color sending every 3 seconds (auto mode)
+- Large, demo-friendly UI components
+
+### What to Exclude
+- WebSocket connections
+- K-means clustering algorithms
+- OffscreenCanvas or Web Workers
+- HSL, Kelvin, or complex color space conversions
+- Camera constraint configuration UI
+- mDNS discovery integration
+- Complex state management libraries
+
+## Device Integration
+
+### Shelly Duo GU10 RGBW API
+- **Endpoint**: `/light/0` on device IP
+- **Method**: GET with query parameters
+- **Required Parameters**: `turn=on`
+- **Color Parameters**: `red`, `green`, `blue`, `white` (0-255 range)
+- **Additional Parameters**: `gain=100`
+- **White Calculation**: Use `min(R,G,B)` to reduce color saturation
+- **URL Format**: `http://{ip}/light/0?turn=on&red={r}&green={g}&blue={b}&white={w}&gain=100`
+
+### What to Exclude
+- `/white/0` and `/color/0` endpoints
+- Advanced Shelly features beyond basic RGBW control
+- Device discovery or network scanning
+- Authentication or security features
+
+## Testing
+
+### Backend Testing
+- **Unit Tests**: Generate JUnit 5 tests for REST controllers and service classes
+- **Coverage**: Test color processing logic and Shelly API integration
+- **Mocking**: Mock RestClient calls to Shelly device
+- **Test Data**: Include various RGB color combinations
+
+### Frontend Testing
+- **UI Tests**: Generate tests using Puppeteer or similar headless browser testing
+- **Coverage**: Test camera access, color detection, and API calls
+- **Scenarios**: Manual mode, auto mode, error handling
+- **Mock Data**: Mock camera input and API responses
+
+### When to Generate Tests
+- Generate backend unit tests after implementing REST endpoints
+- Generate frontend tests after implementing core UI functionality
+- Tests should validate the live demo flow end-to-end
+
+## General Guidelines
+
+### Code Quality
+- **Documentation**: Use Context7 to lookup Spring Boot 3.5 and chosen frontend framework APIs
+- **Simplicity**: Prioritize readability and demo clarity over production patterns
+- **Error Messages**: Clear, user-friendly error messages for demo scenarios
+- **Performance**: Optimize for smooth demo experience, not production scale
+
+### Live Demo Optimization
+- **UI Responsiveness**: Ensure smooth camera preview and color updates
+- **Visual Feedback**: Clear indication of current mode and connection status
+- **Error Recovery**: Graceful handling of common demo issues (camera permissions, network errors)
+- **Timing**: 3-second intervals should be clearly visible during demo
+
+### File Structure
+- **Backend**: Standard Spring Boot structure with minimal packages
+- **Frontend**: Single HTML file or simple multi-file structure
+- **Configuration**: Minimal application.properties for Spring Boot
+- **Dependencies**: Use latest stable versions available through Context7 documentation
+
+### Demo Flow Requirements
+1. User opens web app → webcam activates immediately
+2. User enters Shelly bulb IP address manually
+3. Color preview shows live camera feed analysis
+4. User toggles between manual and auto modes
+5. Bulb updates reflect detected colors in real-time
+
+### Context7 Usage
+- Query Spring Boot 3.5 documentation for RestClient examples
+- Look up chosen frontend framework documentation for best practices
+- Reference camera API documentation for getUserMedia implementation
+- Consult color extraction library documentation for integration examples
