@@ -41,8 +41,6 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 
 **Include:**
 
-* `getUserMedia` for webcam access
-* `enumerateDevices()` for selecting camera input
 * Simple color extraction (e.g. Color Thief)
 * Show color preview box
 * Toggle switch: Manual / Auto
