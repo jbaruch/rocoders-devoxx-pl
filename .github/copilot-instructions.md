@@ -81,7 +81,7 @@ This project is designed for **VS Code with GitHub Copilot Agent Mode enabled*
 
 ## General Guidelines
 
-* Follow the structure and exclusions from the [Requirements](./requirements.md).
+* Follow the structure and exclusions from the [Requirements](../docs/requirements.md).
 * Prioritize clear, readable, live-demo-friendly code.
 * No cloud services, no async message queues, no databases.
 * Manual IP entry only — no mDNS or network scanning.
