@@ -25,3 +25,12 @@ Follow `.github/copilot-instructions.md`. Do not repeat or reinterpret the requi
 - The whole app runs locally for demo purposes.
 
 ---
+
+
+# Follow up prompt
+
+Сurrently we use hadcoded IP for light bulb in the application properties. 
+Shelly bulb supports discovery via mdns. 
+Implement logic using jmdns library (ask context7 for documentation). 
+- Make sure don't bind to localhost interface (it wont' be able to dicover in local network).
+- Add discovery status and the disovered bulb ip somewhere on the screen.
