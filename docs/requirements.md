@@ -10,7 +10,6 @@ This specification outlines a practical and impressive application for a 1-hour 
 
 Build a **web app that uses your webcam to detect dominant color and control a Shelly Duo GU10 RGBW bulb** over the local network.
 
-* mDNS-based **automatic device discovery** on startup or via `/discover`
 * Dropdown for selecting the active webcam device
 * Toggle between **manual or automatic color updates**
 * Entire app runs locally with no cloud dependency
@@ -22,10 +21,11 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 **Include:**
 
 * Java 21 + Spring Boot 3.5 app
+* Build with Maven + Maven Wrapper
 * REST endpoint: `POST /color` accepts RGB data from frontend
-* REST endpoint: `GET /discover` performs mDNS-based discovery and returns IP
 * Use `RestClient` to call `http://<bulb-ip>/light/0`
 * Basic error handling (try/catch, timeouts)
+* IP of the bulb is provider via application properties
 
 **Skip:**
 
@@ -48,8 +48,9 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 * Toggle switch: Manual / Auto
 * Button: “Send to Bulb” (only enabled in manual mode)
 * If Auto mode is enabled, send color every 3 seconds
-* Call `/discover` on load to fetch Shelly bulb IP
-* **UI optimized for large screen demos:** full-screen layout with large, clearly visible components (preview box, toggle, and buttons)
+* **UI optimized for large screen demos:** 
+- full-screen layout with large, clearly visible components (preview box, toggle, and buttons)
+- clean, modern, slick UI
 
 **Skip:**
 
