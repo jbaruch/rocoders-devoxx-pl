@@ -14,7 +14,7 @@ This project assumes:
 * **Context7 MCP is fully configured and running.**
 
   * Use it extensively for all Java 21, Spring Boot 3.5.
-  * Use it for DOM APIs, `getUserMedia`, `enumerateDevices`, and Puppeteer scripting.
+  * Use it for DOM APIs, camera access API.
 
 * Refer to the [Requirements](../docs/Requirements.md) document for detailed functional scope, exclusions, and demo constraints.
 ---
@@ -27,37 +27,25 @@ This project assumes:
 * White = `min(R,G,B)`
 * Log and return errors for:
   * Timeout or bad HTTP status
-
-### ✅ Backend Testing
-
-* Use JUnit 5 and Mockito for all controller mocking.
-* Tests must validate:
-
-  * RGB → RGBW conversion
-  * Correct URL formation for Shelly
-  * Error handling paths
-
 ---
 
 ## 🌐 Frontend Responsibilities (HTML + JS)
 
 * Use plain HTML/JS with optional `htm/preact` or `lit-html` (from CDN).
-* Use `getUserMedia()` for webcam access.
-* Use `enumerateDevices()` to show a **camera selector dropdown**.
 * Show a live preview of the detected color.
 * Button to manually send RGBW color to backend.
 * Auto mode sends color every 3 seconds.
 * Create a full-screen layout with large, visible components for demo purposes.
 * Make slick, modern UI with clear visual feedback.
 
-### ✅ Frontend Testing
+### 📹 Camera Access Implementation
 
-* Use Puppeteer MCP to:
-
-  * Load the app
-  * Interact with toggle/button/selector
-  * Take screenshots
-  * Verify DOM state and visual feedback
+Use the **WebRTC MediaDevices API** for all webcam functionality. 
+Key patterns: 
+- `navigator.mediaDevices.getUserMedia({ video: true })` for basic access, 
+`enumerateDevices()` filtered by `kind === 'videoinput'` for camera selection dropdown, and `deviceId: { exact: selectedId }` constraints for camera switching. 
+- Always implement proper stream management (store in variable, stop tracks when switching), error handling with try/catch blocks, and check browser compatibility (`!!navigator.mediaDevices`). 
+- Connect streams to video elements via `srcObject` property.
 
 ---
 
@@ -68,7 +56,7 @@ This project assumes:
 
 ## ✅ General Rules
 
-* Use Context7 for **every code block** involving Spring Boot, frontend browser APIs, or Puppeteer.
+* Use Context7 for **every code block** involving Spring Boot, frontend browser APIs.
 * Do not use WebSocket, database, Redis, Docker, MQTT, or cloud services.
 * Make each step demonstrable and readable for a live conference audience.
 * Favor clarity over optimization.

@@ -21,7 +21,7 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 **Include:**
 
 * Java 21 + Spring Boot 3.5 app
-* Build with Maven + Maven Wrapper
+* Build with Maven
 * REST endpoint: `POST /color` accepts RGB data from frontend
 * Use `RestClient` to call `http://<bulb-ip>/light/0`
 * Basic error handling (try/catch, timeouts)
@@ -41,8 +41,6 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 
 **Include:**
 
-* `getUserMedia` for webcam access
-* `enumerateDevices()` for selecting camera input
 * Simple color extraction (e.g. Color Thief)
 * Show color preview box
 * Toggle switch: Manual / Auto
