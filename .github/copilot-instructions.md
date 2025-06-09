@@ -14,7 +14,7 @@ This project assumes:
 * **Context7 MCP is fully configured and running.**
 
   * Use it extensively for all Java 21, Spring Boot 3.5.
-  * Use it for DOM APIs, `getUserMedia`, `enumerateDevices`, and Puppeteer scripting.
+  * Use it for DOM APIs, camera access API.
 
 * Refer to the [Requirements](../docs/Requirements.md) document for detailed functional scope, exclusions, and demo constraints.
 ---
@@ -27,16 +27,6 @@ This project assumes:
 * White = `min(R,G,B)`
 * Log and return errors for:
   * Timeout or bad HTTP status
-
-### ✅ Backend Testing
-
-* Use JUnit 5 and Mockito for all controller mocking.
-* Tests must validate:
-
-  * RGB → RGBW conversion
-  * Correct URL formation for Shelly
-  * Error handling paths
-
 ---
 
 ## 🌐 Frontend Responsibilities (HTML + JS)
@@ -57,15 +47,6 @@ Key patterns:
 - Always implement proper stream management (store in variable, stop tracks when switching), error handling with try/catch blocks, and check browser compatibility (`!!navigator.mediaDevices`). 
 - Connect streams to video elements via `srcObject` property.
 
-### ✅ Frontend Testing
-
-* Use Puppeteer MCP to:
-
-  * Load the app
-  * Interact with toggle/button/selector
-  * Take screenshots
-  * Verify DOM state and visual feedback
-
 ---
 
 ## 📋 Reference
@@ -75,7 +56,7 @@ Key patterns:
 
 ## ✅ General Rules
 
-* Use Context7 for **every code block** involving Spring Boot, frontend browser APIs, or Puppeteer.
+* Use Context7 for **every code block** involving Spring Boot, frontend browser APIs.
 * Do not use WebSocket, database, Redis, Docker, MQTT, or cloud services.
 * Make each step demonstrable and readable for a live conference audience.
 * Favor clarity over optimization.
