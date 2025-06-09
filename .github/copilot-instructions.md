@@ -1,89 +1,81 @@
 # Copilot Instructions: Vibecoding RGBW Control App
 
-These instructions guide an agentic AI coding assistant to implement a live demo app that controls a Shelly Duo GU10 RGBW smart bulb based on real-time webcam color detection.
+These instructions are for an agentic coding assistant (e.g., Copilot Agent in VS Code) to implement a real-time RGBW smart bulb control demo app for the Vibecoding conference.
 
-> ✅ This project **intentionally prioritizes simplicity** for a live demo. All complex infrastructure (discovery, DB, cloud) is excluded by design.
-
-## Agent Environment
-
-This project is designed for **VS Code with GitHub Copilot Agent Mode enabled**. The workspace is preconfigured:
-
-* **Agent Mode is active** — Copilot can run code, tests, and apply fixes autonomously.
-* **Context7 MCP is fully set up and running** — use it for all Java, Spring Boot, and Puppeteer API lookups.
-*
+> ⚠️ This project intentionally favors simplicity for a live coding session. Avoid production-level complexity like cloud dependencies, persistent storage, or build chains.
 
 ---
 
-## 🖥 Backend Instructions (Spring Boot 3.5 + Java 21)
+## 🧠 Agent Environment
 
-### Responsibilities
+This project assumes:
 
-* Build a Spring Boot 3.5 app using Java 21.
-* Use **Context7 MCP** to look up all Java and Spring Boot APIs accurately.
-* Implement a REST endpoint `POST /color` that accepts RGB values (`{ red, green, blue }`).
-* Use `RestClient` to send those values to `http://<bulb-ip>/light/0` with appropriate parameters.
-* Basic error handling using try/catch and timeouts.
-* Exclude any complex resilience or observability patterns.
+* **VS Code with Copilot Agent Mode** is active.
+* **Context7 MCP is fully configured and running.**
 
-### Shelly Bulb Integration
-
-* Bulb must be turned on with parameters:
-
-  * `red`, `green`, `blue`, `white` (calculated as `min(R,G,B)`)
-  * `gain=100`
-  * `turn=on`
-* Do not use `/color/0`, `/white/0`, or any non-documented endpoints.
-
-### Testing
-
-* Write unit tests with JUnit 5.
-* Use **Context7 MCP** for API correctness.
-* Include tests for:
-
-  * Valid RGB payload
-  * Missing or malformed input
-  * IP address validation and HTTP failures
+  * Use it extensively for all Java 21, Spring Boot 3.5, jmdns/mDNS discovery APIs.
+  * Use it for DOM APIs, `getUserMedia`, `enumerateDevices`, and Puppeteer scripting.
 
 ---
 
-## 🌐 Frontend Instructions (HTML + JavaScript)
+## 🔧 Backend Responsibilities (Spring Boot 3.5, Java 21)
 
-### Responsibilities
+* Implement REST endpoint `POST /color` to receive `{ red, green, blue }` JSON.
+* Implement `GET /discover` to perform mDNS-based discovery of a Shelly Duo RGBW bulb.
+* Use `RestClient` to invoke `http://<bulb-ip>/light/0` with query parameters: `turn=on`, RGBW values, `gain=100`.
+* White = `min(R,G,B)`
+* Log and return errors for:
 
-* Build the UI with **vanilla HTML and JavaScript**.
-* Use **Context7 MCP** to guide usage of DOM APIs and Puppeteer when applicable.
-* You may use **htm/preact** or **lit-html** (from CDN only) for DOM composition — no build tools.
-* Use `getUserMedia` to access webcam.
-* Use Color Thief or similar for dominant color extraction.
+  * Device not found
+  * Timeout or bad HTTP status
 
-### Interface Requirements
+### 🧭 Discovery Quirk
 
-* Input field for bulb IP address (required before sending colors)
-* Color preview box
-* Mode toggle (Manual/Auto)
-* "Send to Bulb" button (Manual mode only)
-* Auto mode sends every 3 seconds
-* UI must be optimized for large screen presentation:
+* mDNS discovery must **not** bind to the loopback interface (127.0.0.1).
+* Ensure you're using the correct non-loopback, non-virtual, IPv4 interface.
+* Context7 is required for checking jmdns usage and filtering network interfaces.
 
-  * Full-screen layout
-  * Large buttons and preview elements
+### ✅ Backend Testing
 
-### Testing
+* Use JUnit 5 and Mockito for all controller and discovery logic.
+* Tests must validate:
 
-* Use **Puppeteer MCP** to run UI tests:
-
-  * Load page and enter valid IP
-  * Toggle modes and click buttons
-  * Capture screenshots before and after
-  * Verify UI state and color preview
+  * RGB → RGBW conversion
+  * Correct URL formation for Shelly
+  * Error handling paths
 
 ---
 
-## General Guidelines
+## 🌐 Frontend Responsibilities (HTML + JS)
 
-* Follow the structure and exclusions from the [Requirements](../docs/requirements.md).
-* Prioritize clear, readable, live-demo-friendly code.
-* No cloud services, no async message queues, no databases.
-* Manual IP entry only — no mDNS or network scanning.
-* Avoid overengineering — this project is a live co-coding demo, not production software.
-* Use `context7` for all library and language references to avoid hallucinations or outdated code.
+* Use plain HTML/JS with optional `htm/preact` or `lit-html` (from CDN).
+* Use `getUserMedia()` for webcam access.
+* Use `enumerateDevices()` to show a **camera selector dropdown**.
+* Show a live preview of the detected color.
+* Button to manually send RGBW color to backend.
+* Auto mode sends color every 3 seconds.
+* Fetch `/discover` on load to resolve bulb IP.
+
+### ✅ Frontend Testing
+
+* Use Puppeteer MCP to:
+
+  * Load the app
+  * Interact with toggle/button/selector
+  * Take screenshots
+  * Verify DOM state and visual feedback
+
+---
+
+## 📋 Reference
+
+* These instructions are derived from the canonical [Requirements](../docs/Requirements.md) document.
+* Use it for detailed functional scope, exclusions, and demo constraints.
+
+## ✅ General Rules
+
+* Use Context7 for **every code block** involving Spring Boot, jmdns, frontend browser APIs, or Puppeteer.
+* Do not use WebSocket, database, Redis, Docker, MQTT, or cloud services.
+* Make each step demonstrable and readable for a live conference audience.
+* Favor clarity over optimization.
+* Commit incrementally with meaningful messages.

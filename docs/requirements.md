@@ -2,26 +2,16 @@
 
 This specification outlines a practical and impressive application for a 1-hour Vibecoding conference demo using agentic AI IDEs. The app controls a Shelly Duo GU10 RGBW smart bulb based on real-time color extraction from a webcam feed.
 
-**Include:**
-
-* Simple color extraction (e.g. Color Thief)
-* Show color preview box
-* Input field for entering the Shelly bulb IP address manually
-* Toggle switch: Manual / Auto
-* Button: "Send to Bulb" (only enabled in manual mode)
-* If Auto mode is enabled, send color every 3 seconds
-* Camera Selection: Dropdown to select from available cameras (`navigator.mediaDevices.enumerateDevices()`)
-* **UI optimized for large screen demos:** full-screen layout with large, clearly visible components (preview box, toggle, and buttons)
+> ✅ This project **intentionally prioritizes simplicity** for a live demo. All complex infrastructure (cloud, databases, Docker, etc.) is excluded by design. mDNS-based discovery and camera selection are lightweight usability enhancements.
 
 ---
 
 ## Project Goal
 
-> ⚠️ This project **intentionally opts in for simplicity** to enable a live agentic coding demo. All complexity (cloud sync, discovery, error resilience, persistence) is excluded by design to highlight agent productivity and focus.
-
 Build a **web app that uses your webcam to detect dominant color and control a Shelly Duo GU10 RGBW bulb** over the local network.
 
-* IP address of the bulb is entered manually in the UI
+* mDNS-based **automatic device discovery** on startup or via `/discover`
+* Dropdown for selecting the active webcam device
 * Toggle between **manual or automatic color updates**
 * Entire app runs locally with no cloud dependency
 
@@ -33,6 +23,7 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 
 * Java 21 + Spring Boot 3.5 app
 * REST endpoint: `POST /color` accepts RGB data from frontend
+* REST endpoint: `GET /discover` performs mDNS-based discovery and returns IP
 * Use `RestClient` to call `http://<bulb-ip>/light/0`
 * Basic error handling (try/catch, timeouts)
 
@@ -44,11 +35,6 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 * Health checks / Actuator / Prometheus
 * Redis, PostgreSQL, Docker, MQTT
 
-**Discovery Implementation Notes:**
-
-* Use JmDNS after researching it with context7
-* Important: Java mDNS must bind to correct network interface (not loopback 127.0.0.1). Auto-select non-loopback, site-local interface for JmDNS binding
-
 ---
 
 ## Frontend (HTML + JS)
@@ -56,12 +42,13 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 **Include:**
 
 * `getUserMedia` for webcam access
+* `enumerateDevices()` for selecting camera input
 * Simple color extraction (e.g. Color Thief)
 * Show color preview box
-* Input field for entering the Shelly bulb IP address manually
 * Toggle switch: Manual / Auto
 * Button: “Send to Bulb” (only enabled in manual mode)
 * If Auto mode is enabled, send color every 3 seconds
+* Call `/discover` on load to fetch Shelly bulb IP
 * **UI optimized for large screen demos:** full-screen layout with large, clearly visible components (preview box, toggle, and buttons)
 
 **Skip:**
@@ -69,7 +56,7 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 * WebSockets
 * K-means, OffscreenCanvas, Web Workers
 * HSL, Kelvin, or complex color math
-* Camera constraint configuration beyond device selection
+* Camera constraint configuration
 
 ---
 
@@ -94,7 +81,8 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 ## Live Demo Flow
 
 1. User opens the web app → webcam activates
-2. User enters IP address of the Shelly bulb
-3. Color is shown live on screen
-4. User toggles between auto and manual mode
-5. Bulb updates based on detected color
+2. Bulb is discovered automatically
+3. User selects a camera device from dropdown
+4. Color is shown live on screen
+5. User toggles between auto and manual mode
+6. Bulb updates based on detected color
