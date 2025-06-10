@@ -1,0 +1,7610 @@
+# https://shelly-api-docs.shelly.cloud/gen1/#shelly-family-overview llms-full.txt
+
+## CoIoT Protocol Overview
+# The CoIoT Protocol for Shelly devices
+
+The CoIoT protocol is yet another protocol for IoT communication and integration. CoIoT is based on CoAP with some additions as new request code 0.30 for status publishing. All payloads are JSON encoded. All responses are piggyback send with the acknowledgment to further simplify CoAP implementation.
+
+Every CoIoT device is expected to handle a set of request URIs and generate responses in predefined format. Also every device is required to periodically send a multicast CoAP request with code 0.30 that describes it state.
+
+Every CoAP request package and every response with payload should also carry some mandatory CoAP options (headers).
+
+# CoIoT mandatory CoAP options
+
+Some nonstandad CoAP options are required to be transmitted to help quickly identify the remote device and determine if further processing is needed. The options are numbered with the help of this ${ \\mathsf { C } } / { \\mathsf { C } } + +$ preprocessor macros:
+
+#define COIOT\_OPTION\_BASE 3332 //non critical, save to forward, no cache key
+
+#define COIOT\_OPTION\_INCR 8
+
+#define COIOT\_OPTION\_N(n) (COIOT\_OPTION\_BASE+(COIOT\_OPTION\_INCR)\*(n))
+
+#define COIOT\_OPTION\_GLOBAL\_DEVID COIOT\_OPTION\_N(0)
+
+#define COIOT\_OPTION\_MGR\_GLOBAL\_NBASE 1
+
+#define COIOT\_OPTION\_STATUS\_NBASE 10
+
+#define COIOT\_OPTION\_STATUS\_VALIDITY COIOT\_OPTION\_N(COIOT\_OPTION\_STATUS\_NBASE+0)
+
+#define COIOT\_OPTION\_STATUS\_SERIAL COIOT\_OPTION\_N(COIOT\_OPTION\_STATUS\_NBASE+1)
+
+#define COIOT\_OPTION\_MGR\_STATUS\_NBASE 20
+
+To follow CoAP standard, options are numbered above 2048 where proprietary options should reside. LS Bits carry some CoAP proxy flags so we guard them with spacing the numbers with increment of 8.
+
+# COIOT\_OPTION\_GLOBAL\_DEVID
+
+First defined option is COIOT\_OPTION\_GLOBAL\_DEVID This is global option and must be present in all CoIOT packages with request or payload. It's value is string in format
+
+## for example SHSEN-1#4B3F9E#1 The whole option should be less than 50 bytes.
+
+Other mandatory options are COIOT\_OPTION\_STATUS\_VALIDITY and COIOT\_OPTION\_STATUS\_SERIAL this are mandatory only in status responses or publishes.
+
+COIOT\_OPTION\_STATUS\_VALIDITY
+
+COIOT\_OPTION\_STATUS\_VALIDITY is uint16\_t in network byte order (big endian) that states the maximal time between this and the next status publish. This way a device can state it's report interval. If a report is not received from this device after the interval has passed the device should be considered offline. The LS bit of this option controls how the values is scaled. if the LS bit is 0 the value is number of 1/10 of seconds in the validity period so 2 is 0.2 seconds, 10 is a second, 600 is a minute, 65534 is 109 minutes and 13 seconds. If the LS bit of COIOT\_OPTION\_STATUS\_VALIDITY is 1 the value is number of 4 seconds interval in the whole interval. So 3 is 12 seconds 11 is 44 seconds and 65535 is more than 3 days.
+
+# COIOT\_OPTION\_STATUS\_SERIAL
+
+This option is mandatory in status response and publishes. It is a uint16\_t in network byte order which indicates a change in the status report. When a new status report is handled all payload processing can be skipped if the serial number does not change from the last processed payload. The value 0 is reserved and should not be send. This allows easy initialization in the receiving devices.
+
+# Reserved options numbers
+
+Devices are free to define and use their own options but we reserve some for future protocol development.
+
+# Device description (/cit/d)
+
+Every device should response to CoAP GET request with URI /cit/d and return JSON payload describing the device. Throughout the description all  values should be non overlapping integers that are used as unique identificators of blocks and sensors
+
+toplevel object should look like:
+
+"sen" :
+
+blk array should hold list of all "blocks" of the device. Each device should have at least one block. For example if you're device exposes just few sensors it needs just one block, but if you have a multi channel relay you should define a block for each relay. Each sensor or action should be linked to one or many blocks to help users better understand what is measured and what is executed in more complex devices.
+
+blk elements should be objects with structure
+
+sen array should hold list of all sensors and states in the device. These should be objects with structure:
+
+{"I":, "T":, "D":, "R":, "L":}
+
+supported sensor types:
+
+|     |     |     |
+| --- | --- | --- |
+|  | mesured in |
+| "T" | Temperature | Degr.Celsius |
+| "H" | Humidity | Percent |
+| "L" | Luminosity | Lux |
+| "M" | Motion | 1:Motion detected; 0 No motion |
+| "A" | Air quality | 0 to 10 : best to worst |
+| "P" | Power | Watt |
+| "B" | Bettery Percentage | 100:battery is fully charged; 20 and below Battery need to be changed/charged |
+| "S" | Status (this is the catch-all type if no other fits) |  |
+
+D field is mandatory giving one-word description of the sensor.
+
+L field is mandatory array of int or single integer with id's of device blocks to which this sensor relates (you can have two relays with single power meter).
+
+R filed is range description, optional, in text form either "from/to" value or in form $< \ I$ \|U $1 > < 8$ \|16\|32> showing expected sIgned or Unsigned integer size
+
+Example sensor description :
+
+"blk": \[ { "I": 1, "D": "sensors"\
+\
+"sen": \[ 1 "I": 11, "D": "motion", "T" : "S", "R": "0/1", "L": 1 "I": 22, "D": "charger", "T": "S", "R": "0/1", "L": 1 "I": 33, "D": "temperature", "T": "T", "R": "-40/125", "L": 1\
+\
+}, "I": 44, "D": "humidity", "T": "H", "R": "0/100", "L": 1\
+\
+}, "I": 66, "D": "lux", "T": "L", "R": "0/1", "L": 1\
+\
+}, "I": 77, "D": "battery", "T": "B", "R": "0/100", "L": 1\
+\
+act elements will describe actions possible with the device in future extension of CoIoT protocol\
+\
+# Device status (/cit/s)\
+\
+Every device should response to CoAP GET request with URI /cit/s and return JSON payload describing the device. Every device should periodically "publish" it's status using multicast packet in the form of non confirmable request with code 0.30 and request path /cit/s This code is non standard CoAP code and all CoAP complaint servers should silently ignore it. Throughout the status report all  values should match sensors ids from device description. The JSON payload should follow the form:\
+\
+"G": 1 \[0,,\], \[0,,\],\
+\
+# }\
+\
+The G key stands for Generic. Currently all sensor values are generic and non encrypted. Future extensions of the protocol might add P for Private and define some encryption scheme.\
+\
+First 0 in sensor values tuples stand for the channel number. All sensors are required to be "emitted" in channel 0. Future extensions of the protocol might define a way for the users to define extra "mapping" for sensors to channels that will be added to the status after the values from channel 0. This will allow for easy reconfiguration of peer to peer network. For example a multi zone alarm system can be configured to react based on channel number activity and not to have to explicit list every sensor on every siren. Currently the first position in the sensor value tuple is reserved and should be 0.\
+\
+The second position is for the sensor id, and the third is for the sensor's current value.\
+\
+Given the description of the sensor above here is the status of the same sensor:\
+\
+![](https://shelly-api-docs.shelly.cloud/gen1/docs/coiot/v1/images/c1a4e537a5e8d06b5376ee089912bdeffe2c72d006a020e8c5808e5d9726792a.jpg)\
+\
+The first tuple is for sensor id 11 that in description have D:"motion". The second is for 22 - "charger", third for "temperature" and so on\
+\
+# Future plans for the CoIoT protocol\
+\
+We intend to devise a scheme for device actions to be described in the device descriptor and executed latter on. We're also considering implementing mechanism for securely publishing of private sensor data intermixed with publicly available sensor data. We dream of pure peer-to-peer automation where each actuator is flexibly programmed to react to one or many sensors and where adding or replacing senor or actuator does not involve reconfiguration of the whole network.\
+\
+Any suggestions are welcomed!\
+\
+Allterco Robotics Ltd
+
+## Shelly Motion Sensor
+/cit/s:
+
+{
+ "G": \[\
+ \[\
+ 0,\
+ 6107,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 3119,\
+ 4417971\
+ \],\
+ \[\
+ 0,\
+ 3120,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 6110,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3106,\
+ 172\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ 507\
+ \],\
+ \[\
+ 0,\
+ 9103,\
+ 5\
+ \]\
+ \]
+}
+
+/cit/d:
+
+{
+ "blk": \[\
+ {\
+ "I": 1,\
+ "D": "sensor\_0"\
+ },\
+ {\
+ "I": 2,\
+ "D": "device"\
+ }\
+ \],
+ "sen": \[\
+ {\
+ "I": 6107,\
+ "T": "A",\
+ "D": "motion",\
+ "R": \[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3119,\
+ "T": "S",\
+ "D": "timestamp",\
+ "U": "s",\
+ "R": \[\
+ "U32",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3120,\
+ "T": "S",\
+ "D": "motionActive",\
+ "R": \[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 6110,\
+ "T": "A",\
+ "D": "vibration",\
+ "R": \[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3106,\
+ "T": "L",\
+ "D": "luminosity",\
+ "R": \[\
+ "U32",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3111,\
+ "T": "B",\
+ "D": "battery",\
+ "R": \[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L": 2\
+ },\
+ {\
+ "I": 9103,\
+ "T": "EVC",\
+ "D": "cfgChanged",\
+ "R": "U16",\
+ "L": 2\
+ }\
+ \]
+}
+
+## Shelly 2.5 Relay
+/cit/s:
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4201,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4203,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6202,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 30.23\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "relay"\
+ \],\
+ \[\
+ 0,\
+ 4108,\
+ 230.00\
+ \]\
+ \]
+
+}
+
+/cit/d:
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"relay\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":1201,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/2300",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4201,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/2300",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4203,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":6202,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"relay/roller",\
+ "L":4\
+ },\
+ {\
+ "I":4108,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "L":4\
+ }\
+ \]
+
+}
+
+## Shelly 2 Roller Mode
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1102,\
+ "stop"\
+ \],\
+ \[\
+ 0,\
+ 1103,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4102,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4104,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6103,\
+ "normal"\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "roller"\
+ \],\
+ \[\
+ 0,\
+ 4108,\
+ 230.00\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"relay\_1"\
+ },\
+ {\
+ "I":3,\
+ "D":"roller\_0"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":1102,\
+ "T":"S",\
+ "D":"roller",\
+ "R":"open/close/stop",\
+ "L":3\
+ },\
+ {\
+ "I":1103,\
+ "T":"S",\
+ "D":"rollerPos",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":4102,\
+ "T":"P",\
+ "D":"rollerPower",\
+ "U":"W",\
+ "R":\[\
+ "0/1840",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4104,\
+ "T":"E",\
+ "D":"rollerEnergy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":6103,\
+ "T":"A",\
+ "D":"rollerStopReason",\
+ "R":"normal/safety\_switch/obstacle/overpower",\
+ "L":3\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"relay/roller",\
+ "L":4\
+ },\
+ {\
+ "I":4108,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "L":4\
+ }\
+ \]
+
+}
+
+## Shelly 1PM Overview
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 24.88\
+ \],\
+ \[\
+ 0,\
+ 3105,\
+ 76.78\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 0\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3105,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"F",\
+ "R":\[\
+ "-40/572",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3117,\
+ "T":"S",\
+ "D":"extInput",\
+ "R":"0/1",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly 1PM Example
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 24.44\
+ \],\
+ \[\
+ 0,\
+ 3105,\
+ 75.99\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 17.2\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 63\
+ \],\
+ \[\
+ 0,\
+ 3201,\
+ 16.4\
+ \],\
+ \[\
+ 0,\
+ 3202,\
+ 61.5\
+ \],\
+ \[\
+ 0,\
+ 3301,\
+ 17.9\
+ \],\
+ \[\
+ 0,\
+ 3302,\
+ 64.3\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3105,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"F",\
+ "R":\[\
+ "-40/572",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3117,\
+ "T":"S",\
+ "D":"extInput",\
+ "R":"0/1",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly 1L Overview
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 85\
+ \],\
+ \[\
+ 0,\
+ 3105,\
+ 185\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 0\
+ \]\
+ \]
+
+}
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"input\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"input\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":5,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":6,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":7,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":7\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":3\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":3\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":7\
+ },\
+ {\
+ "I":3105,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"F",\
+ "R":\[\
+ "-40/572",\
+ "999"\
+ \],\
+ "L":7\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":7\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":6\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":6\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":4\
+ }\
+ \]
+
+}
+
+## Shelly 1PM DHT22
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 24.22\
+ \],\
+ \[\
+ 0,\
+ 3105,\
+ 75.59\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 20.5\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 68.9\
+ \],\
+ \[\
+ 0,\
+ 3103,\
+ 37\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3105,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"F",\
+ "R":\[\
+ "-40/572",\
+ "999"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3117,\
+ "T":"S",\
+ "D":"extInput",\
+ "R":"0/1",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly Motion 2
+/cit/s:
+
+{
+ "G": \[\
+ \[\
+ 0,\
+ 3101,\
+ 16.3\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 61.3\
+ \],\
+ \[\
+ 0,\
+ 6107,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 3119,\
+ 1649071270\
+ \],\
+ \[\
+ 0,\
+ 3120,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 6110,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 3106,\
+ 11883\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ 11\
+ \],\
+ \[\
+ 0,\
+ 9103,\
+ 1\
+ \]\
+ \]
+}
+
+/cit/d:
+
+{
+ "blk": \[\
+ {\
+ "I": 1,\
+ "D": "sensor\_0"\
+ },\
+ {\
+ "I": 2,\
+ "D": "device"\
+ }\
+ \],
+ "sen": \[\
+ {\
+ "I": 3101,\
+ "T": "T",\
+ "D": "temp",\
+ "U": "C",\
+ "R": \[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3102,\
+ "T": "T",\
+ "D": "temp",\
+ "U": "F",\
+ "R": \[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 6107,\
+ "T": "A",\
+ "D": "motion",\
+ "R": \[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3119,\
+ "T": "S",\
+ "D": "timestamp",\
+ "U": "s",\
+ "R": \[\
+ "U32",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3120,\
+ "T": "A",\
+ "D": "motionActive",\
+ "R": \[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 6110,\
+ "T": "A",\
+ "D": "vibration",\
+ "R": \[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3106,\
+ "T": "L",\
+ "D": "luminosity",\
+ "R": \[\
+ "U32",\
+ "-1"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3111,\
+ "T": "B",\
+ "D": "battery",\
+ "R": \[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L": 2\
+ },\
+ {\
+ "I": 9103,\
+ "T": "EVC",\
+ "D": "cfgChanged",\
+ "R": "U16",\
+ "L": 2\
+ }\
+ \]
+}
+
+## Shelly 1 DHT22 Example
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 21.6\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 70.9\
+ \],\
+ \[\
+ 0,\
+ 3103,\
+ 55.4\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3117,\
+ "T":"S",\
+ "D":"extInput",\
+ "R":"0/1",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly 1 Device Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3117,\
+ "T":"S",\
+ "D":"extInput",\
+ "R":"0/1",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly 2 Relay Mode
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ -1\
+\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6202,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "relay"\
+ \],\
+ \[\
+ 0,\
+ 4108,\
+ 230.00\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"relay\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":1201,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3680",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6202,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"relay/roller",\
+ "L":4\
+ },\
+ {\
+ "I":4108,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "L":4\
+ }\
+ \]
+
+}
+
+## Shelly 2.5 Roller Mode
+/cit/s:
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1102,\
+ "stop"\
+ \],\
+ \[\
+ 0,\
+ 1103,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4102,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4104,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6103,\
+ "normal"\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 32.44\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "roller"\
+ \],\
+ \[\
+ 0,\
+ 4108,\
+ 230.00\
+ \]\
+ \]
+
+}
+
+/cit/d:
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"relay\_1"\
+ },\
+ {\
+ "I":3,\
+ "D":"roller\_0"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":1102,\
+ "T":"S",\
+ "D":"roller",\
+ "R":"open/close/stop",\
+ "L":3\
+ },\
+ {\
+ "I":1103,\
+ "T":"S",\
+ "D":"rollerPos",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":4102,\
+ "T":"P",\
+ "D":"rollerPower",\
+ "U":"W",\
+ "R":\[\
+ "0/2300",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4104,\
+ "T":"E",\
+ "D":"rollerEnergy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":6103,\
+ "T":"A",\
+ "D":"rollerStopReason",\
+ "R":"normal/safety\_switch/obstacle/overpower",\
+ "L":3\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"relay/roller",\
+ "L":4\
+ },\
+ {\
+ "I":4108,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "L":4\
+ }\
+ \]
+
+}
+
+## Shelly Plug Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/2500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ }\
+ \]
+
+}
+
+## Shelly 1 Sensor Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 19.8\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 67.6\
+ \],\
+ \[\
+ 0,\
+ 3201,\
+ 19.9\
+ \],\
+ \[\
+ 0,\
+ 3202,\
+ 67.9\
+ \],\
+ \[\
+ 0,\
+ 3301,\
+ 20.4\
+ \],\
+ \[\
+ 0,\
+ 3302,\
+ 68.8\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"sensor\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"sensor\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3201,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3202,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":3301,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3302,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3117,\
+ "T":"S",\
+ "D":"extInput",\
+ "R":"0/1",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly i3 Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2301,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2302,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2303,\
+ 0\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"input\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"input\_1"\
+ },\
+ {\
+ "I":3,\
+ "D":"input\_2"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L/SS/SSS/SL/LS",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L/SS/SSS/SL/LS",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":2301,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":3\
+ },\
+ {\
+ "I":2302,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L/SS/SSS/SL/LS",\
+ ""\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":2303,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":3\
+ }\
+ \]
+
+}
+
+## 404 Not Found
+# 404 Not Found
+
+## Shelly API Property List
+PK�raR�l9�..mimetypeapplication/vnd.oasis.opendocument.spreadsheetPK�raR����#�#Thumbnails/thumbnail.png�PNG
+
+
+IHDR��#\]PLTE
+
+
+!%2!+%4&&11(!4$2$6\*8$=\*"""$&(%(\*+$"+('\*\*\*")8\*3=3)#0,,<+!1.3=3-7663H#3D$6J$8M)7F'8�O�$��pi\*�)i; ��-ԁ6q s�,�(�mIHlيeEY۱�$"�l�6�lkS0�T.���%$Y���ޮ��I�gk�#՞�vG����4�3��\|��X�n�"���۹\|��Нoó�W,���/\_�����6��g�w/������>v�Ex�$��÷�%\|���G\`C��w�!��O����)\|�����2侉J�ķ�JO����n �;6����w����������?��/��?C����7���?y ����ȉ�"��E�E�E�E�E�E�E�E����{!�%I('+Z���F�U�f'F1��ߛ�Y�g�yx(F�0���B.7�}��X�ń?�4/�^\\�m̆ڲ$�������dk�7C\\�ߍ��a��(��+m#�H��Y��-�#��/pH��67���G��-����Z��)����av%Ϻ�;A�?�+ŁC�E��O؂S���xr�H(Һ ��R���G�y�ݛ�8 ^+Gӛ�8�yU�wf���T�7eI��W���t�9��o~�s���}�;0м��
+�\`��)��#�\`\`\[ ���G� �.��yyΊR��OX<\_m���{o���\
+-�?{�G���2�R���7z�У�������\\~G�4-����px�ퟙ:�s\]�����4�#Ε�v�/�U�g�m8��~hߺs�^��ܕ�ODn�H.S;�th�'����3uA�\|�A��?�ej{���ڟu<����������˭0��Z�����=�9������ke\*�F�?\|���?�9�dO�\|�h��V�q��4��#�f1�Ҕ�
+Q�{�j�0�C��lct'���q��\]��
+v֤��L��/0�$��}��';k6�?v�3�S\*o"��\\������m�\`"����o1^��F} Hb���X� �\_�O���i)'��~�\|��(������'����5���ݥh#��yP�N~ f�/��\*P�H�u\`Xc���J���\[9���&\
+��aW�B��m�?�\|\|U����V��\|�2��?z��y�l�m���s-��\[�ã��H�?��K~�PR0�z��Q\
+����+�0��iM�� D��\
+視m�φ���C@���,�uōb�~�O�ޤU����\\
+��5�e4\_Ru���迅!aݢ��"�"�"�"�"����X�n�Bw��s�z�����\*4����4)5rҥ��c��� ?Wb~2�2h�G����#�p�-��)H�l�~7�Ey�^Ab�{?}z9������/I�{6�����s��ː^#jD�3�o'Ҡ�S���@4\\b�L�?���3�h��ؓ1����^1�YsI(j�\|I�g�\
+C�����\_E��$\]\
+���������1��c���\]����I��e��B>PT�i���\*�\*�aRS�hn�ϲP�D+,xc���\]�!Oʆ�xAÙ���<���YQ�2�ۚ��V���aiM���:�+{{��Y��~w�c�l�m%�������P ��t
+V�\*%hku���3:����$�0��^����zK��ᰬ�s���:�����;�����O��"n����?���Z#��H볝{uǜ(��A���d���9Y�t�s�Lׅ\_�JJ�hr�kՙޙ�UϿR?hWC�gRSO6���9YOj�F8��t\]}�Mr�
+�r�������c����/�����(�'�<�J��2��~^������D�5�\_�R����������Onu�Ε'�JVSrٯ^kp\|���.�2�R��+�����O�1��𚯾�/���7��Ϻ��I����ގ��?�q\\�<\]����\]ǲ��8sS�-
+�5�R�g�
+�l��Ȏ�
+��FD�Ա���xb�9rY����US��>�h<�^�\_�<�ԣIj���^t�tutk���;�\|G�C��Y��p���h��٨u\|���I�����A�ӏe�:�s�Ǹ��Y�J'�V���i�ݳ�?87�Q�&��T%S�\_w(1��u6���+
+?ND�����lZ��p˿��?w~n#�O�pr!���N�������C���܌�������+���\\��f���\\C�ﱘ��Pif�Z��:Z��8we�"r��K��fd�����X���p�ln �qsЌGی��#f��oSy}�!l��a���ܺ3.��T�͸w�įmd�M8��jp)\_c�/\`̟\[�ը;�i�֧�5�dώ���ۻ� D\\�\]T�'m\`�b�/�!y�\_e-H�ug�+� ���6���z�.���
+\[w��\_�y�(��ۂa�C�S��9�{%�˟'k^D����B��e���Ll�������D#;$�te>�k�@ҩ����kG�Z��eF��ji�9�,�nZ��ʬ�r��)S��d\
+�)�J��}\
+�\`@Qf3����kR�\*��M�3�s������1�%A�ȣwg&\\�/c�\
+Yd'�����KG˗4D���{���+Z�L��t)��S����7͗N�hcGG����ȿȿȿȿȿ ���-��+�̱�&�~�=\*�/9�H��ըbw{�\]��O̧Z�gį��$Z����.S�^zDR�ׄ��δ8L��\*^#��a�tn&c2��>�>��r�^�\*>�!~���֠o&X�?m��S�N�\`a��\\��&Ǜ >9
+̣��������D�芉������MrUC�\|����h�j��4���)�8��US~N��\\)��+��N)/��Ԇ
+�-���,�
++��c�!eJ���j��gp�U��9�D��l��/o,q�����jw�t��.غlA��ҟF����'��,�8a�����+9\`o�4\[,�\_�" ����7d;��g�qlM���!��-�~��3;���BS���,)�&��a2��z#�g�5m� ��"��k���Mq���Ql��F@4��0l��C@\
+>����ޗ�{����-)��eaŎW/r-'����L~�\*J�>����땖��.������{�lZ��S���s��/��c��\_o�D6���2����ޤ�m�Z\|l=�/\|��'Q4?b�G���c\_x�\]���5�=������%;����̫�Qȼ}���tP;7��=���eX!k�mu��j@.4��q�W����Z#�Z�إ,P�P+��4h��5�R<���G48j�\\�α������J�j�O�1���݉�zW�WH�����g����7,5\*;V�~>�����7>���?��Q�J�Q\]�Ѩ�W��~��$�#�~�Y^�� 3��E�x~u�w��w'~�~�L@�
+Z�n9�l��Mfi����R�M#�?�ҹ����#7�U�ӛi���L�z�JRj.\]�U\]q�,��Ϋ2�����޺����x��K��u�mu��z����w~9���eÝ�\|�2���߿���mɝ�%�'�<���Ap5��(��8j;��%�
+�p8����n��!�\`1��������Iw-��Z��������\\ogM�\*�T������\_/���Nu6)b���)�$"?�\[7��̔ԝ���J�!����2���Nt�����d�ؘy�=�(��!JaaaAa!����/�~��X�r����-�+n��k��~O�?�a���Tc��8�R����0a��8�3�v$A�&�7�"�Q�� �:��Q���{tŢ�<���jc�O�UP�ғ-qW�m4�I�\[��S��,y�h��B^�1��\
+�.�b7\`�\`��>�~�{׋\`�t�����.���L�~�ώ>�z�P�z�l��������p���+��w�?��ܽ�K�ˋ\`����O��- �.��E��"6Ԟ��X$�����\_4�h1t�+�e�0��.��ҡUrp�ҊGQl��;}E�D:�P�<.�g�<=�d�S��⫛fO�&�?���HD����eԛ\
+�d\
+s�1����"QuMm#����&I�7��"�����bI����T �\
+�m�ZH�2�����#QE<}k3a�T\[O�?��v������������O���k��2���&!�i1�7gd�eλ����������4WB~�C�$��#a�/�x!��L��iܲ����瑟��w�����3e�ւr���Th-lwد�̷�;S���-�a��������7��3�\[��B�9������\`e�a�\
+i���ux�4l��ï��IF�(�PC���P/����s�KIi�\[E��n"�W��"�v�<�)?��r�P��z�YѽnF�h������o� �\_�����˿Ϧ�����jzil\_�gGL����È�Qh�}iw��������X�X'\
+��s\ 1M��D4QwC�K��<0���\*�11�,+���'���R�-z��-D(b��p�q@ ��C��D����f�a(Lx��7�$ R�k1n���؎b�~u��1W��e��\\(V/\*˙�H&O!Y5"��׮&P^��#D�ȝF:��̑R���X��SVp�$%�\
+�+��y\|�n!s��++����O,Wܠ��wKW�۷�G���-�}\[�ox���d�޾\\o��a��>Q�J����/���sdE�d{y��^i\[yzx����O�ࠪ$�k�Mt��� ���ࣧ�V���%��w���U���\_�T���\_����c���K�?����������?gB�w��\_+X�.��9��練�ߺὈ��N���٥%����#Wt��7�W\|1���9�v\
+�v�TU�{}��⿙��LH�s\
+F��;}H�\_x��Ė��;�R�>�6�l\[��U�o�}�l���8�c��K���Y�����M˳�����"��ڕ��#OU�-}�IP�����ehs��)�ؿ.G�қ����yzf��c�C�,g�&O���o����ǅw�%��Fx#�/R�?���D���e�ĬTlO㞑�ލ�����Ou���J��TcM��TP ��L����M�iW�g�P�?�\[~Tӕ\
+��A����T���az�u����~�jNU!ȩH@��C@���H\*��BK�+\\�'�͵����J'$^修9=Y�3k��>��G��B����ag�+�ۗ����JY�~�a\]�x+�e\`����s=�N�s�QB���?F�-���$��D\|�c�Ȭ�o�?�o���,CoD�֭�z���?L52��&w3��\|t(��\]+C�ˆ׷ܳaU��\|?��a�����T0W��魟}�q�������/�G��������w���;O��\[��exD��c�b�����5����l�=��o)����l��pl��$�����f&&��Ȳg��Ú^�^�,��\
+SWGAT��c��\
+@g.��Z��(@��4��Y�Zb�W\`6����H$�\[�Eہ�p%�?S�.ﻻ4P\[S�'��^+�����C�bOSj�����rH��6��D���WzL��ؿ�.9j�B��EԎ \]�#a�4(��l�5�x�%/���s�%{$%��C���I"D��7ۂ�P��az���Y&�τk�뙍^��o��SW$��;R�u\[�\_�5y9kf�ש>��X�����E��E�E�E�E�E�E�ȟ�@�HJ��(���r��K�q��q�ƿ��\[b4�����Rj��\_�\\��JI����b�)Y\
+�󦠫Qsr>�1��,m�mMw����V���!��������T�{�OA�r��O�S�ߠ�k��?���w�Bn �o�dXKIF�vԠ�K4~�Dj1�8Τ׎��m6����y��P���2b�nLI͘����\*�����3�y��2�^Ƒ����\_MW���M���2��+z�X�>���x�\]�:�Qy&5�Є�M8nN0���ӥW�R�)��Nm\
+h�B�f��Y��~��ۆ�G�=;�N㫭Zk�Q4�n�\`M�sO\]�s��su�Y�\[������֎#����\
+MG\\�nw����)\`I�j��\_����T���+��\_{�\`�z"�����}Y�E���ٲ22��<�!>�xq�����ͭR4��q�f�so�ڵi�������M�������<�3�wʚ��ez�\\�T�H��M(,��V�Ї\\�Y�?�7¨�O^=�t��C��օ�2���O+"�4�+ƫ."�b)k��n$�F��E����0������?N��ِu��?śH�Wԏ�>�P�9A���Κ5�m��?v���i��I���c���@G�?���³�\`r�!��E%DNn�>��A\]ÿ�1��\|��03��8)���&���+s��\[��OY� JMV���u�âjґGɫ�G�o\
+ꡋ���e�8)��V�W�y���V���3;}�v��#�ؿu�❥����/^ʿu�O�;�H�z���}��m�K��^�.~��\[Ϳ���u��e���7���߁� �9�j���u���\`��\[ ��c�P�-�Hi\[�vo޺�{j��l�\*��{a#��ho�����f���Ck$l31�2t5�� f�\
+�\
+����?w>я����u�n���)��W/�z�M���W���R���<�+�\[�\|}^�?��L�+XA����R���1lP��l�y5\|̎�.3���aE�p��������\|�>)�u\]��(忩���r≮u����E/�\]�c���j��2i�w�H&��Ud�AԊ�����9��-�l���S�t�t8��\|���uq�gҷ,�#�#=;�e�GW�O�X�k���9^��X0�ӟ�֝��il3�Z {6HU�\|��N&�9�\
+u\
+� ��0"�Ԑ�������^�؂;e������^�� "'�#ȇ��w��G�rT��e�J\]���Q�˺���~�\*۔�PS�:G��������̪���D����.�&�����\\�>��Ζ��9�פ�2��!�?9I�@�w�!��P��P�\]�h\|�y'� ���\
+���L��t�З��;�a�u����1�?A��~G(�������r}�x�\*�UD�\]G�~�>��+�\`��7�y��+\[m��v2�������������j��/\
+��\|\|�8vMR�/O���������S��N'PZ��A!����\
+�c�'\]��Ń���I��<�A��U���K�}JYU��;N�c ��΢p��\*9�M���.\]IZ繺�.ρ�R�>���֔�N�ߪw�����s�'�I%sj��h���\[����w�8xJse��f��\\)�����J5?��AW�EՇ\[�ATz��k�"�kY���"ء<���^,�xe����Jּ�\
+eX�OU��Y�\`ګ��98V.^cΣ��xQ�jz���E�ws��aG��O���E?LX~�X,�e�v��5�\
+���1���5\`n�m���m���k�\
+�d���q�G�DgȄ���OæW֮�V�N��U����n�̔�%�}Ia��zV�hV����ߤo\_�L\[�3\_�ך������/�����"�iJ >6�Pb�쀧�o�:�W\`}ǅ��G �j�g:\[z�h<�b��L&\_�V��D�R��6���r~���ן�\
+��5z\]��~h��f��\[\`��%s�l3uG���\|�\|�EZ��;���h8�+U\
+k�th�C&�r���G��I�\`x��u���^i���G��\_���!;���\]"l�v�{�a\*�K/��45u����#K�.��t�?t��"�e\_�"��\] �o ����\\���\
+ׇ\_T/},2�Y�\[��Q���>���ŉ��%�HS^g��3����5�Y��\*�Ok���7�Q���GG?�w���(~�uI��F��ۼ���5��F�0� !3>����mq��zݽ�y1җIP\_:��;�6������3a)��7Q�OJ"����XSa��"��e �DF�Ke�R�L D&;@yY$\
+\*>:҈/����Sߔʨ\`�@RL��ߡΧ��W�y2A4���+X�g��o��p�.��k�w�\]�>Үk�h\`�������!���IEND�B\`�PK�raRConfigurations2/statusbar/PK�raRConfigurations2/popupmenu/PK�raRConfigurations2/accelerator/PK�raRConfigurations2/progressbar/PK�raRConfigurations2/menubar/PK�raRConfigurations2/toolpanel/PK�raRConfigurations2/toolbar/PK�raRConfigurations2/images/Bitmaps/PK�raRConfigurations2/floater/PK�raRmeta.xml���n�0E��\
+�͖"��Y��H�u�����l)Ҡ�����a�N�E��9��ΐ��O�\
+^����\
+�B�����m��Kt�\|��ˋ����C��\\LRݳ��A��̴��n;���A{ ���b�VNJ�\_�ù##d�pLBc$���,\]�\
+~ᎃU%8�CO�0"���o����d����z��)M����B�\`b2%l\]�\_%�Qp�j�1j�v�M���Z7xCӘb���F1�)�Y���2-krCQμ4�4�4�F9�%�QX�q6Y��c�+馋�b��Y͗m�)�>g�׳�?�{!�\
+�&�������0ɍm�����2=�Car�$�p�}/�\]�W��h�O��P�ѻ�A\*���͟W��;���w�Kݵ{��A�i�h-rP�ײ�8W�~6�u�HS�w�Dn��oPK8����QPK�raR\
+styles.xml�Z\[o�6~߯T\`؀ɺ8Ic/q���nm04�����(��$\
+m'��;�ɺ:�S'�4���s�s!)���&K�5f%����O<��yH#�'���w��S�b���c�yD�U�s��6ť�y9W�����s�JR�s��r��9-pn��u�\\�J�Hec�%�.��\
++,�\
+Yt=��\\��ڌX�.ӱ�7e��� iV NZVܤ$�xn/9/殻�l&�鄲��g��+g+��\
+W�X\*QQ������?�\]��0Gc�غI�\*��l45��NT�K���"/�)��4�k��ήu2@s�Dlt�Ip3U���T�Fu���@\|O�70)�y�z�W,{/�mP2R�vS�����T!��\]�xޑ��k��N���Y\
+(\
++�i�G�\|^��7h&��\|�2\\P�+C���� �R\]�,.U1k� ��^(�3u�l�h�5��g�^����+A���S��\\��J��6\[�T�ALWy��N��o\
+̈�B��74�3&�{��kHMC����j�\\�UC����!�h1�I7\*�,��/�޺b��\
+�M}��b��r�V��؉p���3��aK\]#���ڧt޺B9$)�%�Hz{n�\
+Z��©A�j�x'�9x\
+�SnHY6�!��5bD憻۴��?��j�Y5��nK������. �^�5�Q2�\|���b�%�Tra���O��Šum�g���A=�6sƋ�h��-�Ѭ\
+��� q��^ ����S@\
+a� ���A-����b�8=)��0Q8\]1i�@!�t���C��V:w��{6���A�+D��k!��o��܎�YUW�:�����K)��y�#kQ�\]�O� 8�Rߎ�3^�M�n�7�$KX\\�i�ۯ���7.@�)Rt�4����}�O�����\`���y��w\`̓��\
+��\[U�UI�X�F�Ǆ���c����(���(u�S�3�M�;s��9���H���s�8��)��g���^jkA��O'�����R��������i����4o���倎����^����6b��3ِH<\|@+NCF�K�G\|U���4�K�6k�CY�cJ��NNz��!K��8ۦ�c���Rf�G'�g��Y"�IH����$���}w�mR�(�~a������1����A��oo�S��Osd8�\[;N\
+��A��O.h&)�\[\[�����N����'�m����c��O���(P\_�}\_�8 3a�J���o����\|�T7L=�/CFs��+�Li%�u�2NF#P�2�\_o#��ci�����8�ދg\`K���':�b L�8� �9��5zM9o��O��z\|���my39-zll��vB3"��\]!���W?2�����\\\[�\
+�o@x�c������ة!HLu���W�I\_&\_wg�;���D��JE����д�Ix�z:�2q&�nR��c�^\\\\\���A=R�HhE^D�����1J��k(�Mu���/�B���/\|s��X���A�N��wQ�V�Z��l�aV\]1��2��d�w��'<�C���Bwl�JjY!n\|�����%l�\*��F�J<3�����y����� �����-��r�/\
+��=\]n���u�>m1���؁r���n���PK�5ǎ�\`'PK�raRmanifest.rdf͓�n�0��<�e��@/r(ʹj��5�X/�޾��VQ�����F3ߎ���aȋ���T4c)%�Hh��+:�.���:�ض+��j���\*�wn\*9\_��-7lϳ�(x��.��~l���q�ڭ"E�VF\_��\[��q�\`h0F4P��b�AD�RWo�?���=��b�'��c�����l�.D��Q�+W��j�T>.��z��\`t���k$����a����I(����iz��H�����K\\��(L���M #.N�c3d���HHw���e�s���(k�g��R�^(\[F�z��0����xiA��~���Byz�k��7\\�Vp�n�H1��\
+\|�o�Qlk���3q��{���9�(�G%WFǠ6��!j�լ6Gڟ�W3�\[Ku:����aF� �4&�Fp-e�1�4���n�d��)<\|}Q�\
+oo�S�x{פ\\fG.�����(�\`��D彞1����o�4dR�<\`0�I2��13��V��+��}\*��.��c�&Ŕ@c;TE�^j�u5�s-�\*\]���OLu!�d�T�k ��q���,,�����o�\\�l)ߕ��� +\[$��\|:��z�" QpY���X�)��\
+�\`B.ɕZgT����!��b�\\x+t<�B�2�Q7�f�����̥�i}w�df�菫���0�v$1���W�?6�F��z�j���i�\[�����G�پ�-o����h&~�f���Y���/)�aȐ\[��<�9ۦ�A��W�=�U{�"?��v{�$c\`�a,?ule��&C�a��C-�������73B�x?\]���f,\
+m��ԛ'{,�{{��N��flw����ϔ���,y�\[��iڌ�#��A�=�?��.�)���i-�����\|zmJD\*�z��(����x����=SP�!�Aj�\]���崟���PK��-u�"PK�raRMETA-INF/manifest.xml��An� E�9�Ŷ2�YU(N�z���Qr�b+N\\U�b);\`���\|�fw�\]u���ǆ}�wV�^\[��}��?�n���\
+��DrZT��۶a9��\*�$Q��$��@������/G��n�fWi��<��NNB�gԊJ����J�Io�mA�F�����\`�������d����0��h�j�h�\
+��v'�\|̀�G�)DP:��%(�c�PY�MK�{�b{Ձ�\\���rgHk��)#/9�ly;WXf^�ҐQQz�K��P^�����&�8H�g����ᗮ���@T�������oPK9�3,PK�raRcontent.xml��r�8����)P��.��%�#N����㤳�\|T�$�յ����\
+IpЊ��a��j�v��dq@R�dI�m����I$ �?~����ߣ�\\1!?��;;��.��x�\|�������\_\_���\|0\\���n�X�\\+�/ѱc�,��\|'�3Ne ��4b�r���E�g���̳�\_��kG7�˱��֍ag����O6�˱=AG�F��:Q��\|���e�p��QBU0g��0��=��J�9�h4j��\��ӧOsub�; ��"4�<�a!��I���:E؈)��}�lR�F}&�N��5U���\_s�������pm�.Ifקbm?3�g\]��\[�U�r܈\*��'�;}����\|�W"Z�Yv&�\\$k�f��s>1"d�ݘ��t��{)�he������.\
+�I��hQ��p\]G�h�+p�I&���K"����$�����?ޝ\_�>��4pps�VKE�i�a�9�%\\�I��/\|�Z��m����E\\-���-��9pt1�3q�\*\`��̔����c��ӕ��L���{Z���~�4��b K�=a"�K44ў�ܡ��!��-�:�t���>\`a��'���6��"��A;=O��b��"�����ѹ7���\\�w���N�\]�1>\
+<��O�۝��2���Ye\[�l�v�ݣ�w�\`����og��Cw�y���R֣�2�������6�,;>�3L�R�\*�?�,������'������x�����rl%Rv��d�;�}p��>��Kr�\]���n����Vv/�\`w���m?��K��\]����>�\\j�Oʻ\]\\�?FTW����!k06�i��^��BY'��$��ܞ�nИ�a+➾S(Z��Ԭ��t��������ʻ��F��(��2�\`aX\\I���6�e��C��;h�䩀�A𽸹nA2:1�p9P}$hb�Ƈ/E�+��n2e7}��MX�Am/���\\m45^�"�8��lpm�ܡ�<�fh/���-\]/�}8!��X��e��uY���Ѹ�ì�~���<<��oeZ���x��k���0a����yٞw���m(�5��\_^ ݂�L\]�7%��:��he�\]�.r� �\|'�\
+x�ܜY2e�R�Z���n0�M�o1�6�����E᝜�A��&ކ\
+�,϶�\\)�͍y<��7X�M��\*3�Ud�;��≍��m�\[�ޔ\|�r�\_<��%nc��&��L�9��������\[���q���v�\
+���mӏ�W�߮�����D\*\*�ԏ�q^�tn� ���:�����%�oC�%��m6�k���@j��-zXn��۬��Sl>R����ڂķ��q�I$<����辚�m6���{�zp��dsd�M��mV�ۯ'�X\[�V�X����ۼ�SN�����\|���+�Z�~��#�(��\]b\
+���J9�f��c��������Z8ܻI>�T�X��+�а#m�A�8T��!��m����яR�\\^�J���e٥�+OU�l�Z�K�{K�:݆������8����\`��+���x�ҡ���;Y�Nc%�;}�X�:�&��ԃ������3a��y�y��������\|� Ny\*g��uB�$ײ��D+\`v���R�E'\_0K��b��ŵ�ŕ\_~�\|����ٙ�{�� �3�u퍖&��5�ֈd�p����o:����)��'a�thu�m�S�+���䩩JRݚT����כ�����31~�?��ߋ?�����rxg\[6&���·����Bc�3�w5�б ׇ��^�.�����D������q'�X���\[�6Sv=��D�6S�4���P�-����dk���ӭQ�F��K~�a��d�Y�H�3"��mr�\
+�\
+Ǆ&I�p'2��\\��MƤG���� �<&�>O��\*�f&d��%+�G�l��V�&��!�̑�'5��UD�C���L����>7���\\\`����,���A\
+\| ��H�t�I��)�<���C����> E�@��A\_@vA�m<�j��Q5g��H������-�9�tt���ZЉ�\_uQ�n(���+�hHF\\\|#\*���JH����r����{F�1�6�P\\g<�͘ǭ+S�4�F,�b\|3���i���\_��\\j�@>m�J��\|�3��^���M�=yT$�8a=����ml���޼�!���'���d��\*E\]\_s���O�0�\
+���ȓ���{�f1r#lt�l=�\*I��������l�{�d��-���������S�~���l�ˉ�����w�΀a\*���qM �W���7�!��񷘏�\
+w�>j)�4ZU}Mc"�<+���e\
+7�/,���/@DDˆ���ѯ\]r bvb5����~�>#)�eS\\��v������ ���\\�$���xh>0��\[���U�1K\[bB��E���b�}��t!�J����a���9�9���ӧ���ُ�����\
+\\�eQ������I�\`�X��1�o�k˹k��xd��>�"O�k&e1 Mc��Gv�6k�{)B#���\`.��?t��\*����}�����Vr�����cW�k\`��\
+����{I�j.�E�\`7�J�g ���r��!�=�k/�s��B����;��r�&-lXC\`턁#�i�gEƱ�ApZ����,�35oR��f�\_�>(��МKw�j�w�j$�6�\_d=�d���T$2��Q�R\_�= �W�\]-�ʲ�\]Ok���������WX"�=�Q�FP��4����>\]�D����auQξC�.��(���R�ȩ�Mͧ˚4�.K\*�����(��6�1L�a�CHK.�.k��2�n6���{��8�~�������\`́F�ZTe\_����4J~�4-�b\\G28\[U��9e2�a��f\]6�������6Xnb>�P~�uM�Kz0��Fg�@�r�>S#�b��S#�&O�>�-\
+cN�����7�3�hB\
+�\|T%�����wh7Z��� ?T\
+-Wޚ��\|�N0���>�h9��Q>Z��z��-tWhv�B�~mE�A�޼�(4D�u>"�T�(�k�����DdǦ\*o;�F�Ŏ�O���dGdG����4\
+�@���'6��5��wE��+�����J��N;X�;6'w�V���U��dZ���4ŉ,́��Y,��uFң� ���8������>p�dD^��\_P������c%x8=���\
+��\> ����\`�f"�I��)ȼ��b���d����������蛹W-�e-���Ř��bۅ��Îs���P��\*ơ��B0�#EV�b�R\|�(G�G�GOzH�H�%�x��,��(�������yM�q\*��ҫ��sᲫ��k�Vw�k3Z�^M�k)y4�8"Jsx4L��ܕ ��;�=M,���ڂd�J����~>���B���Oh���Z\[x\]{����)�\]M�ZS{�įu�m2?�-�m� 2�KE��mrz��0�\_��꯳7b�$��ޑ�-ه��ٖ\|�\\�O�zܹ�"�wO�)\
+g(�ǁ�� �xo������壀���T��,��&8��\] 8�Pwm��t�"��v+�S��sጂ�ӯR�s�6Т��9ue�y��eXp�\\2�f΅�\_Md�m&�z�����3���\[���$�h��Z��qx����6��\
+B;�D��b�B��Z\\s��TpR�\*+��Dц����>YM�;�$̝w��\]H4��Nb��3��l7+�q�TkҠz{\]k8LW�Q6 ��,d�~��&������mZR4&�����1�=+��\[^ �6�y3o����bי\|��&��Qu�7�e1C�ț0�����Y�&�=� �^��S�7�qKd1B\*�&�>���\]��=��Y\\gy��ǭ+R����i,���F����\[�<\
+=���%��\\�K8�����8-d��Y+OL�oGA�z7��?���-��c�Qx\|S���bp�;u���:����H�ժ\`-$�̵ΐ���Qo���H�<\]�e��PWWgX�z��˒ȫ:��@�i�4������9�\_�'�
+�\|�nJ�g����l�Z>�j!����,��$��i�M�ٵ{���YUM�-��aq\]��םAaܶ�Ū�\_�ѭ2��܈�ѯ�j7 �'��b�����<�!������)wF�#�aTa�~��k3�A󄢖d�x�KMx�K�oq0���k�Z>�i!���G�i�r�mb�5�F���qz�G����k�(Vd���mM�5\_���Z�Z�Bxͽy�9���n�v{8��Bx�
+���Ŋ�b�����%�c�P�Y���$ym\|�!(�G�5
+baa�X�}����߾����>~�4
+{;���\`���ju0����5K��o��"\`���IiE�-��K\|^���'������T�f�TKl%a+ e�Q+)k$��6��M�a��VH\|C;�<��m��PK�\`Xu0kTsX);"a#dF$D$�.a Oy�Q,J��\*vd��m�;�;�b�A��y�լQ�b���Т�o(v������q����-�Ư~� ٕf����r���5�Ge���'�L\*��كC���W���.�J������Q�c��֠%vD6\*�#����K�pc�8֕�1�����4\`��ȋu�E��F����#.6Bf�E�E���q1�݈��0^̦5"0�
+��5�X����2#1"1ڗ0���w����Oﶳ�� ��$a�m�Ɗ����cW�ɋ����%k��s�-�ߤyٗ,v��f>���j\_�M���د��P��5Ի�TxE���J鱥���i)��j �#�Հ�j�~HU�\*#� +�
+"�� )��¯�O<'�)�i<��eF������UE�O<5WH��iIUXC�<�O�69��������^��1�\]"��N��F�L��
+��3 q"qVA�c�e��8u���h�H:\`j����ޗ��!s���D��T�sN=���٤��p";�e�a���WA1�{�V�1A�3жF5���#\\6Bf��2�ͬ���Uǋ�c��TDVd
+$Ǉ!G �\_'ח%ǁ򺓥�FՏ��#U6Bf{��4H���9�
+��:��C�l\`@w�f�eF�����U�wj>$��f���A�lbf�#c"c��Ș�������J���ʛ���@:!�J���N�
+}w2�Y�\*�RG�S��!sjP
+-�f�񷘏h�f�G���eeQ�:��O��)�1s� ��ѫ�%~vwZ�#��s������d+�+rц\`���˵�������������O�"5=�zJ2
+��}M���Wu�BiU�ǀ���y�hL!#/�}i��S��Wr��%�b����\_7���s{m�� :�I��p��h\]vx:��&��'.��U��-wk�Y+��n7k�?�p���q���\_q.�Q{�U��~�!Vd�� �᝛M��y��=��8\_M���U :���s�'�Y$��l"\[���,$ۉ���˵�j��8��Jg4 �^K�G?i�����O/����LytI\[X�gG�M�k�rD�k݀��2(�d�)B\\�������>��'�Ѥ�SJ\_t�6� ���\]XYH�E?Q�%k�M\[�'\_��{�˿���T�v86����2��D�L�6�S�#�F�\
+�\_�7�&�\]i�"���g\_jD�}��\|n ��n�fm"C���� ���?�(��r�Ĩ#lz���qG��^���ǐQ�\`\
+���n�����0N��@�D�J��?e>\[&��TT���:���4ߛ�Љ ���^n&Qr��1����FX�\`�@�ǰ��d���!�\
+<�}Rf�:tK�B��xd��3(�jT�Z�>2G��sb���J��ѵE�u�� q���Lw�Ҽ)��W=��z��A0$���e�J\\��j#����Ms�Ͼ�n^�<��ocW��)L�"\
+�J�T>�$��6y9�\]bvL ��6���\_'�߅6~qiw0<��,��J�f��!!��>�y\[ܷ����{\\�l��N+�����M�w�'�)�O�Z�;L#��ʐ3� ���O�3��?��7�~�B\
+����\|�^�?PK6����I�PK�raR�l9�..mimetypePK�raR����#�#TThumbnails/thumbnail.pngPK�raRo$Configurations2/statusbar/PK�raR�$Configurations2/popupmenu/PK�raR�$Configurations2/accelerator/PK�raR%Configurations2/progressbar/PK�raRS%Configurations2/menubar/PK�raR�%Configurations2/toolpanel/PK�raR�%Configurations2/toolbar/PK�raR�%Configurations2/images/Bitmaps/PK�raR4&Configurations2/floater/PK�raR8����Qj&meta.xmlPK�raR�5ǎ�\`'\
+F(styles.xmlPK�raR��h��I/manifest.rdfPK�raR��-u�"�0settings.xmlPK�raR9�3,76META-INF/manifest.xmlPK�raR6����I��7content.xmlPKe�U
+
+## Shelly Bulb Guide
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5105,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5106,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5107,\
+ 255\
+ \],\
+ \[\
+ 0,\
+ 5108,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5102,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5103,\
+ 4750\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "white"\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5105,\
+ "T":"S",\
+ "D":"red",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5106,\
+ "T":"S",\
+ "D":"green",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5107,\
+ "T":"S",\
+ "D":"blue",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5108,\
+ "T":"S",\
+ "D":"white",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5102,\
+ "T":"S",\
+ "D":"gain",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":5101,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":5103,\
+ "T":"S",\
+ "D":"colorTemp",\
+ "U":"K",\
+ "R":"3000/6500",\
+ "L":1\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"color/white",\
+ "L":1\
+ }\
+ \]
+
+}
+
+## Shelly Plug E API
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ }\
+ \]
+
+}
+
+## Shelly Button Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3112,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 9102,\
+ \[\
+ "unknown"\
+ \]\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L/SS/SSS",\
+ ""\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":1\
+ },\
+ {\
+ "I":3115,\
+ "T":"S",\
+ "D":"sensorError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3112,\
+ "T":"S",\
+ "D":"charger",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3111,\
+ "T":"B",\
+ "D":"battery",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9102,\
+ "T":"EV",\
+ "D":"wakeupEvent",\
+ "R":\[\
+ "battery/button/periodic/poweron/sensor/ext\_power",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly TRV Examples
+/cit/s :
+
+{
+ "G": \[\
+ \[\
+ 0,\
+ 3101,\
+ 27.6\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 81.7\
+ \],\
+ \[\
+ 0,\
+ 3103,\
+ 31.0\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 87\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3116,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 3117,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3118,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 3121,\
+ -1.0\
+ \],\
+ \[\
+ 0,\
+ 3122,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 9103,\
+ 1\
+ \]\
+ \]
+}
+
+/cit/d :
+
+{
+ "blk": \[\
+ {\
+ "I": 1,\
+ "D": "sensor\_0"\
+ },\
+ {\
+ "I": 2,\
+ "D": "device"\
+ }\
+ \],
+ "sen": \[\
+ {\
+ "I": 3101,\
+ "T": "T",\
+ "D": "temp",\
+ "U": "C",\
+ "R": \[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3102,\
+ "T": "T",\
+ "D": "temp",\
+ "U": "F",\
+ "R": \[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3103,\
+ "T": "T",\
+ "D": "targetTemp",\
+ "U": "C",\
+ "R": \[\
+ "4/31",\
+ "999"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3104,\
+ "T": "T",\
+ "D": "targetTemp",\
+ "U": "F",\
+ "R": \[\
+ "39/88",\
+ "999"\
+ \],\
+ "L": 1\
+ },\
+ {\
+ "I": 3115,\
+ "T": "S",\
+ "D": "sensorError",\
+ "R": "0/1",\
+ "L": 2\
+ },\
+ {\
+ "I": 3116,\
+ "T": "S",\
+ "D": "valveError",\
+ "R": "0/1",\
+ "L": 2\
+ },\
+ {\
+ "I": 3117,\
+ "T": "S",\
+ "D": "mode",\
+ "R": "0/5",\
+ "L": 2\
+ },\
+ {\
+ "I": 3118,\
+ "T": "S",\
+ "D": "status",\
+ "R": "0/1",\
+ "L": 2\
+ },\
+ {\
+ "I": 3111,\
+ "T": "B",\
+ "D": "battery",\
+ "R": \[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L": 2\
+ },\
+ {\
+ "I": 3121,\
+ "T": "S",\
+ "D": "valvePos",\
+ "U": "%",\
+ "R": \[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L": 2\
+ },\
+ {\
+ "I": 3122,\
+ "T": "S",\
+ "D": "boostMinutes",\
+ "U": "%",\
+ "R": \[\
+ "0/1440",\
+ "-1"\
+ \],\
+ "L": 2\
+ },\
+ {\
+ "I": 9103,\
+ "T": "EVC",\
+ "D": "cfgChanged",\
+ "R": "U16",\
+ "L": 2\
+ }\
+ \]
+}
+
+## Shelly Plug API
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/3500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ }\
+ \]
+
+}
+
+## Shelly Plug S
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6109,\
+ 0\
+\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 110\
+ \],\
+ \[\
+ 0,\
+ 3105,\
+ 230\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 1\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/2500",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6109,\
+ "T":"P",\
+ "D":"overpowerValue",\
+ "U":"W",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":3105,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"F",\
+ "R":\[\
+ "-40/572",\
+ "999"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly RGBW2 Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5105,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5106,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5107,\
+ 255\
+ \],\
+ \[\
+ 0,\
+ 5108,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5102,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0.46\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 3\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ "L"\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "color"\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5105,\
+ "T":"S",\
+ "D":"red",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5106,\
+ "T":"S",\
+ "D":"green",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5107,\
+ "T":"S",\
+ "D":"blue",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5108,\
+ "T":"S",\
+ "D":"white",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5102,\
+ "T":"S",\
+ "D":"gain",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/288",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"color/white",\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly Vintage SHVIN-1
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 1.5\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5101,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/6",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ }\
+ \]
+
+}
+
+## Shelly 3EM Overview
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4105,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4106,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4107,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4108,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4109,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4110,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4205,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4206,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4207,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4208,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4209,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4210,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4305,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4306,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4307,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4308,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4309,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4310,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ -1\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"emeter\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"emeter\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"emeter\_2"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":4105,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/31800",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4106,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4107,\
+ "T":"E",\
+ "D":"energyReturned",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4108,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "R":\[\
+ "0/265",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4109,\
+ "T":"I",\
+ "D":"current",\
+ "U":"A",\
+ "R":\[\
+ "0/120",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4110,\
+ "T":"S",\
+ "D":"powerFactor",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4205,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/31800",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4206,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4207,\
+ "T":"E",\
+ "D":"energyReturned",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4208,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "R":\[\
+ "0/265",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4209,\
+ "T":"I",\
+ "D":"current",\
+ "U":"A",\
+ "R":\[\
+ "0/120",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4210,\
+ "T":"S",\
+ "D":"powerFactor",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4305,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/31800",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4306,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4307,\
+ "T":"E",\
+ "D":"energyReturned",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4308,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "R":\[\
+ "0/265",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4309,\
+ "T":"I",\
+ "D":"current",\
+ "U":"A",\
+ "R":\[\
+ "0/120",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4310,\
+ "T":"S",\
+ "D":"powerFactor",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ }\
+ \]
+
+}
+
+## Shelly H_T SHHT-1
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 3103,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 9102,\
+ \[\
+ "unknown"\
+ \]\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3103,\
+ "T":"H",\
+ "D":"humidity",\
+ "R":\[\
+ "0/100",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3115,\
+ "T":"S",\
+ "D":"sensorError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3111,\
+ "T":"B",\
+ "D":"battery",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9102,\
+ "T":"EV",\
+ "D":"wakeupEvent",\
+ "R":\[\
+ "battery/button/periodic/poweron/sensor/alarm",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly Smoke Sensor
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 6105,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 9102,\
+ \[\
+ "unknown"\
+ \]\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6105,\
+ "T":"A",\
+ "D":"smoke",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3115,\
+ "T":"S",\
+ "D":"sensorError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3111,\
+ "T":"B",\
+ "D":"battery",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9102,\
+ "T":"EV",\
+ "D":"wakeupEvent",\
+ "R":\[\
+ "battery/button/periodic/poweron/sensor/alarm",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly Dimmer SHDM-1
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6104,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3104,\
+ 231.25\
+ \],\
+ \[\
+ 0,\
+ 3105,\
+ 448.25\
+ \],\
+ \[\
+ 0,\
+ 6101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "white"\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"input\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"input\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5101,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"1/100",\
+ "L":1\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":2201,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":3\
+ },\
+ {\
+ "I":2202,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":2203,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":3\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/230",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6104,\
+ "T":"A",\
+ "D":"loadError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3104,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"C",\
+ "R":\[\
+ "-40/300",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":3105,\
+ "T":"T",\
+ "D":"deviceTemp",\
+ "U":"F",\
+ "R":\[\
+ "-40/572",\
+ "999"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6101,\
+ "T":"A",\
+ "D":"overtemp",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"color/white",\
+ "L":4\
+ }\
+ \]
+
+}
+
+## Shelly Bulb RGBW
+/cit/s:
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5105,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5106,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5107,\
+ 255\
+ \],\
+ \[\
+ 0,\
+ 5108,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5102,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5103,\
+ 4750\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "color"\
+ \]\
+ \]
+
+}
+
+/cit/d:
+
+{
+ "blk": \[\
+ {\
+ "I": 1,\
+ "D": "light\_0"\
+ },\
+ {\
+ "I": 2,\
+ "D": "device"\
+ }\
+ \],
+ "sen": \[\
+ {\
+ "I": 1101,\
+ "T": "S",\
+ "D": "output",\
+ "R": "0/1",\
+ "L": 1\
+ },\
+ {\
+ "I": 5105,\
+ "T": "S",\
+ "D": "red",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5106,\
+ "T": "S",\
+ "D": "green",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5107,\
+ "T": "S",\
+ "D": "blue",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5108,\
+ "T": "S",\
+ "D": "white",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5102,\
+ "T": "S",\
+ "D": "gain",\
+ "R": "0/100",\
+ "L": 1\
+ },\
+ {\
+ "I": 5101,\
+ "T": "S",\
+ "D": "brightness",\
+ "R": "0/100",\
+ "L": 1\
+ },\
+ {\
+ "I": 5103,\
+ "T": "S",\
+ "D": "colorTemp",\
+ "U": "K",\
+ "R": "3000/6500",\
+ "L": 1\
+ },\
+ {\
+ "I": 9101,\
+ "T": "S",\
+ "D": "mode",\
+ "R": "color/white",\
+ "L": 1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/9",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ }\
+ \]
+}
+
+## Shelly Bulb RGBW
+/cit/s:
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5105,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5106,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5107,\
+ 255\
+ \],\
+ \[\
+ 0,\
+ 5108,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5102,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5103,\
+ 4750\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "white"\
+ \]\
+ \]
+
+}
+
+/cit/d:
+
+{
+ "blk": \[\
+ {\
+ "I": 1,\
+ "D": "light\_0"\
+ },\
+ {\
+ "I": 2,\
+ "D": "device"\
+ }\
+ \],
+ "sen": \[\
+ {\
+ "I": 1101,\
+ "T": "S",\
+ "D": "output",\
+ "R": "0/1",\
+ "L": 1\
+ },\
+ {\
+ "I": 5105,\
+ "T": "S",\
+ "D": "red",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5106,\
+ "T": "S",\
+ "D": "green",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5107,\
+ "T": "S",\
+ "D": "blue",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5108,\
+ "T": "S",\
+ "D": "white",\
+ "R": "0/255",\
+ "L": 1\
+ },\
+ {\
+ "I": 5102,\
+ "T": "S",\
+ "D": "gain",\
+ "R": "0/100",\
+ "L": 1\
+ },\
+ {\
+ "I": 5101,\
+ "T": "S",\
+ "D": "brightness",\
+ "R": "0/100",\
+ "L": 1\
+ },\
+ {\
+ "I": 5103,\
+ "T": "S",\
+ "D": "colorTemp",\
+ "U": "K",\
+ "R": "3000/6500",\
+ "L": 1\
+ },\
+ {\
+ "I": 9101,\
+ "T": "S",\
+ "D": "mode",\
+ "R": "color/white",\
+ "L": 1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/9",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ }\
+ \]
+}
+
+## Shelly Flood Sensor
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 26\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 78.8\
+ \],\
+ \[\
+ 0,\
+ 6106,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ 92\
+ \],\
+ \[\
+ 0,\
+ 9102,\
+ \[\
+ "alarm"\
+ \]\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6106,\
+ "T":"A",\
+ "D":"flood",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3115,\
+ "T":"S",\
+ "D":"sensorError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3111,\
+ "T":"B",\
+ "D":"battery",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9102,\
+ "T":"EV",\
+ "D":"wakeupEvent",\
+ "R":\[\
+ "battery/button/periodic/poweron/sensor/alarm",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly Bulb Color Mode
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5105,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5106,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5107,\
+ 255\
+ \],\
+ \[\
+ 0,\
+ 5108,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 5102,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5103,\
+ 4750\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "color"\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5105,\
+ "T":"S",\
+ "D":"red",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5106,\
+ "T":"S",\
+ "D":"green",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5107,\
+ "T":"S",\
+ "D":"blue",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5108,\
+ "T":"S",\
+ "D":"white",\
+ "R":"0/255",\
+ "L":1\
+ },\
+ {\
+ "I":5102,\
+ "T":"S",\
+ "D":"gain",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":5101,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":5103,\
+ "T":"S",\
+ "D":"colorTemp",\
+ "U":"K",\
+ "R":"3000/6500",\
+ "L":1\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"color/white",\
+ "L":1\
+ }\
+ \]
+
+}
+
+## Shelly Door Window
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3108,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3119,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3109,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6110,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3106,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3110,\
+ "unknown"\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 9102,\
+ \[\
+ "unknown"\
+ \]\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":3108,\
+ "T":"S",\
+ "D":"dwIsOpened",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3119,\
+ "T":"S",\
+ "D":"dwStateChanged",\
+ "R":\["0/1","-1"\],\
+ "L":1\
+ },\
+ {\
+ "I":3109,\
+ "T":"S",\
+ "D":"tilt",\
+ "U":"deg",\
+ "R":\[\
+ "0/180",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6110,\
+ "T":"A",\
+ "D":"vibration",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3106,\
+ "T":"L",\
+ "D":"luminosity",\
+ "U":"lux",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3110,\
+ "T":"S",\
+ "D":"luminosityLevel",\
+ "R":\[\
+ "dark/twilight/bright",\
+ "unknown"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3115,\
+ "T":"S",\
+ "D":"sensorError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3111,\
+ "T":"B",\
+ "D":"battery",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9102,\
+ "T":"EV",\
+ "D":"wakeupEvent",\
+ "R":\[\
+ "battery/button/periodic/poweron/sensor/alarm",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly Uni SHUNI-1
+{
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2201,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2202,\
+ ""\
+ \],\
+ \[\
+ 0,\
+ 2203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3118,\
+ 11.56\
+ \]\
+ \]
+}
+
+## Shelly Door Window 2
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3108,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3119,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3109,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6110,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3106,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 3110,\
+ "unknown"\
+ \],\
+ \[\
+ 0,\
+ 3101,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 3102,\
+ 999\
+ \],\
+ \[\
+ 0,\
+ 3115,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3111,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 9102,\
+ \[\
+ "unknown"\
+ \]\
+ \]\
+ \]
+
+}
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":3108,\
+ "T":"S",\
+ "D":"dwIsOpened",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3119,\
+ "T":"S",\
+ "D":"dwStateChanged",\
+ "R":\["0/1","-1"\],\
+ "L":1\
+ },\
+ {\
+ "I":3109,\
+ "T":"S",\
+ "D":"tilt",\
+ "U":"deg",\
+ "R":\[\
+ "0/180",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":6110,\
+ "T":"A",\
+ "D":"vibration",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3106,\
+ "T":"L",\
+ "D":"luminosity",\
+ "U":"lux",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3110,\
+ "T":"S",\
+ "D":"luminosityLevel",\
+ "R":\[\
+ "dark/twilight/bright",\
+ "unknown"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3101,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"C",\
+ "R":\[\
+ "-55/125",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3102,\
+ "T":"T",\
+ "D":"extTemp",\
+ "U":"F",\
+ "R":\[\
+ "-67/257",\
+ "999"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3115,\
+ "T":"S",\
+ "D":"sensorError",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":3111,\
+ "T":"B",\
+ "D":"battery",\
+ "R":\[\
+ "0/100",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":9102,\
+ "T":"EV",\
+ "D":"wakeupEvent",\
+ "R":\[\
+ "battery/button/periodic/poweron/sensor/alarm",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly EM Examples
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4105,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4106,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4107,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4108,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4205,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4206,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4207,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 4208,\
+ -1\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ -1\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"relay\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"emeter\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"emeter\_1"\
+ },\
+ {\
+ "I":4,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":4\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":4105,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/31800",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4106,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4107,\
+ "T":"E",\
+ "D":"energyReturned",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4108,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "R":\[\
+ "0/265",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4205,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/31800",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4206,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4207,\
+ "T":"E",\
+ "D":"energyReturned",\
+ "U":"Wh",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4208,\
+ "T":"V",\
+ "D":"voltage",\
+ "U":"V",\
+ "R":\[\
+ "0/265",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":1\
+ }\
+ \]
+
+}
+
+## Shelly Gas SHGS-1
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 3113,\
+ "normal"\
+ \],\
+ \[\
+ 0,\
+ 3114,\
+ "not\_completed"\
+ \],\
+ \[\
+ 0,\
+ 6108,\
+ "none"\
+ \],\
+ \[\
+ 0,\
+ 3107,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1105,\
+ "closed"\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"sensor\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"valve\_0"\
+ },\
+ {\
+ "I":3,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":3\
+ },\
+ {\
+ "I":3113,\
+ "T":"S",\
+ "D":"sensorOp",\
+ "R":\[\
+ "warmup/normal/fault",\
+ "unknown"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3114,\
+ "T":"S",\
+ "D":"selfTest",\
+ "R":"not\_completed/completed/running/pending",\
+ "L":1\
+ },\
+ {\
+ "I":6108,\
+ "T":"A",\
+ "D":"gas",\
+ "R":\[\
+ "none/mild/heavy/test",\
+ "unknown"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":3107,\
+ "T":"C",\
+ "D":"concentration",\
+ "U":"ppm",\
+ "R":\[\
+ "U16",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":1105,\
+ "T":"S",\
+ "D":"valve",\
+ "R":\[\
+ "closed/opened/not\_connected/failure/closing/opening/checking",\
+ "unknown"\
+ \],\
+ "L":2\
+ }\
+ \]
+
+}
+
+## Shelly RGBW2 Guide
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 24\
+ \],\
+ \[\
+ 0,\
+ 1201,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5201,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 1301,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5301,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 1401,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5401,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 0.06\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4201,\
+ 0.13\
+ \],\
+ \[\
+ 0,\
+ 4203,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4301,\
+ 0.13\
+ \],\
+ \[\
+ 0,\
+ 4303,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 4401,\
+ 0.13\
+ \],\
+ \[\
+ 0,\
+ 4403,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 6102,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 2101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 2102,\
+ "L"\
+ \],\
+ \[\
+ 0,\
+ 2103,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 9101,\
+ "white"\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"light\_1"\
+ },\
+ {\
+ "I":3,\
+ "D":"light\_2"\
+ },\
+ {\
+ "I":4,\
+ "D":"light\_3"\
+ },\
+ {\
+ "I":5,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5101,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":1201,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":2\
+ },\
+ {\
+ "I":5201,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":2\
+ },\
+ {\
+ "I":1301,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":3\
+ },\
+ {\
+ "I":5301,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":3\
+ },\
+ {\
+ "I":1401,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":4\
+ },\
+ {\
+ "I":5401,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":4\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/288",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4201,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/288",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4203,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":2\
+ },\
+ {\
+ "I":4301,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/288",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4303,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":3\
+ },\
+ {\
+ "I":4401,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/288",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":4403,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":4\
+ },\
+ {\
+ "I":6102,\
+ "T":"A",\
+ "D":"overpower",\
+ "R":\[\
+ "0/1",\
+ "-1"\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":2101,\
+ "T":"S",\
+ "D":"input",\
+ "R":"0/1",\
+ "L":5\
+ },\
+ {\
+ "I":2102,\
+ "T":"EV",\
+ "D":"inputEvent",\
+ "R":\[\
+ "S/L",\
+ ""\
+ \],\
+ "L":5\
+ },\
+ {\
+ "I":2103,\
+ "T":"EVC",\
+ "D":"inputEventCnt",\
+ "R":"U16",\
+ "L":5\
+ },\
+ {\
+ "I":9101,\
+ "T":"S",\
+ "D":"mode",\
+ "R":"color/white",\
+ "L":5\
+ }\
+ \]
+
+}
+
+## Shelly Duo Overview
+/cit/s :
+
+{
+
+ "G":\[\
+ \[\
+ 0,\
+ 9103,\
+ 0\
+ \],\
+ \[\
+ 0,\
+ 1101,\
+ 1\
+ \],\
+ \[\
+ 0,\
+ 5101,\
+ 100\
+ \],\
+ \[\
+ 0,\
+ 5103,\
+ 4600\
+ \],\
+ \[\
+ 0,\
+ 5104,\
+ 50\
+ \],\
+ \[\
+ 0,\
+ 4101,\
+ 9\
+ \],\
+ \[\
+ 0,\
+ 4103,\
+ 0\
+ \]\
+ \]
+
+}
+
+/cit/d :
+
+{
+
+ "blk":\[\
+ {\
+ "I":1,\
+ "D":"light\_0"\
+ },\
+ {\
+ "I":2,\
+ "D":"device"\
+ }\
+ \],
+ "sen":\[\
+ {\
+ "I":9103,\
+ "T":"EVC",\
+ "D":"cfgChanged",\
+ "R":"U16",\
+ "L":2\
+ },\
+ {\
+ "I":1101,\
+ "T":"S",\
+ "D":"output",\
+ "R":"0/1",\
+ "L":1\
+ },\
+ {\
+ "I":5101,\
+ "T":"S",\
+ "D":"brightness",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":5103,\
+ "T":"S",\
+ "D":"colorTemp",\
+ "U":"K",\
+ "R":"2700/6500",\
+ "L":1\
+ },\
+ {\
+ "I":5104,\
+ "T":"S",\
+ "D":"whiteLevel",\
+ "R":"0/100",\
+ "L":1\
+ },\
+ {\
+ "I":4101,\
+ "T":"P",\
+ "D":"power",\
+ "U":"W",\
+ "R":\[\
+ "0/9",\
+ "-1"\
+ \],\
+ "L":1\
+ },\
+ {\
+ "I":4103,\
+ "T":"E",\
+ "D":"energy",\
+ "U":"Wmin",\
+ "R":\[\
+ "U32",\
+ "-1"\
+ \],\
+ "L":1\
+ }\
+ \]
+
+}
+
