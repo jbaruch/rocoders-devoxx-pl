@@ -27,6 +27,11 @@ This project assumes:
 * White = `min(R,G,B)`
 * Log and return errors for:
   * Timeout or bad HTTP status
+* **CRITICAL: Configure HTTP timeouts** to prevent hanging:
+  * Connect timeout: 2 seconds
+  * Read timeout: 3 seconds
+  * Use `SimpleClientHttpRequestFactory` with proper timeout configuration
+  * This prevents the application from hanging when Shelly bulb is unreachable
 ---
 
 ## 🌐 Frontend Responsibilities (HTML + JS)
