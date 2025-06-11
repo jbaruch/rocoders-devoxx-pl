@@ -1,10 +1,10 @@
-# RoboCoders AI Fokus
+# RoboCoders Devoxx Pl
 
-This is the RoboCoders AI Fokus project repository.
+This is the RoboCoders Devoxx Pl project repository.
 
 ## Getting Started
 
-Welcome to the RoboCoders AI Fokus project!
+Welcome to the RoboCoders Devoxx Pl project!
 
 ## Contributing
 
