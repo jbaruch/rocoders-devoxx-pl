@@ -2,7 +2,7 @@
 
 This specification outlines a practical and impressive application for a 1-hour Vibecoding conference demo using agentic AI IDEs. The app controls a Shelly Duo GU10 RGBW smart bulb based on real-time color extraction from a webcam feed.
 
-> ✅ This project **intentionally prioritizes simplicity** for a live demo. All complex infrastructure (cloud, databases, Docker, etc.) is excluded by design. mDNS-based discovery and camera selection are lightweight usability enhancements.
+> ✅ This project **intentionally prioritizes simplicity** for a live demo. All complex infrastructure (cloud, databases, Docker, etc.) is excluded by design.
 
 ---
 
@@ -80,8 +80,7 @@ Build a **web app that uses your webcam to detect dominant color and control a S
 ## Live Demo Flow
 
 1. User opens the web app → webcam activates
-2. Bulb is discovered automatically
-3. User selects a camera device from dropdown
-4. Color is shown live on screen
-5. User toggles between auto and manual mode
-6. Bulb updates based on detected color
+2. User selects a camera device from dropdown
+3. Color is shown live on screen
+4. User toggles between auto and manual mode
+5. Bulb updates based on detected color

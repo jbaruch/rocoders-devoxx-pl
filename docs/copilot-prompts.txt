@@ -20,7 +20,6 @@ Follow `.github/copilot-instructions.md`. Do not repeat or reinterpret the requi
 
 ⚠️ Constraints:
 - No mDNS, no WebSockets, no databases, no Docker.
-- IP is entered manually via the UI.
 - Frontend is HTML + JS, optionally `htm/preact` or `lit-html` from CDN only.
 - The whole app runs locally for demo purposes.
 
