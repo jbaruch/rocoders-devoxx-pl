@@ -1,5 +1,22 @@
 # .windsurfrules - RGBW Control App
 
+## 📋 Implementation Planning (MANDATORY)
+
+**BEFORE implementing any code:**
+
+1. **Create a detailed implementation plan** in `docs/plan.md` that includes:
+   - Project structure breakdown (directories, files)
+   - Backend implementation steps (classes, methods, configuration)
+   - Frontend implementation steps (HTML structure, JS modules, UI components)
+   - Integration points between frontend and backend
+   - Testing approach for each component
+   - Estimated implementation order and dependencies
+   - Makefile structure with commands for building and running
+
+2. **Wait for user approval** of the plan before proceeding with code implementation
+
+3. **Get explicit confirmation** before writing any source code
+
 ## Agent Environment
 
 - **Target**: Windsurf Agent Mode with Context7 MCP preconfigured
@@ -19,6 +36,11 @@
 - **Shelly Integration**: HTTP calls to `http://<bulb-ip>/light/0` endpoint
 - **Error Handling**: Basic try/catch blocks and timeout configuration only
 - **Architecture**: Single REST controller with minimal service layer
+- **HTTP Timeout Configuration**: 
+  - Connect timeout: 2 seconds
+  - Read timeout: 3 seconds
+  - Use SimpleClientHttpRequestFactory with proper timeout configuration
+  - CRITICAL: This prevents application hanging when Shelly bulb is unreachable
 
 ### What to Include
 - REST endpoint for color processing
@@ -54,6 +76,14 @@
 - **User Controls**: Manual IP input, Manual/Auto toggle, Send button
 - **Auto Mode**: Send color every 3 seconds when enabled
 - **Manual Mode**: Send button only enabled in manual mode
+
+### Camera Integration
+- Use WebRTC MediaDevices API for webcam functionality:
+  - navigator.mediaDevices.getUserMedia({ video: true }) for basic access
+  - Optional: enumerateDevices() filtered by kind === 'videoinput' for camera selection
+  - Implement proper stream management (store in variable, stop tracks when switching)
+  - Add error handling with try/catch blocks and browser compatibility checks
+  - Connect streams to video elements via srcObject property
 
 ### What to Include
 - getUserMedia implementation for webcam access
@@ -117,6 +147,7 @@
 - **Simplicity**: Prioritize readability and demo clarity over production patterns
 - **Error Messages**: Clear, user-friendly error messages for demo scenarios
 - **Performance**: Optimize for smooth demo experience, not production scale
+- **Java APIs**: Avoid using deprecated APIs in all Java code
 
 ### Live Demo Optimization
 - **UI Responsiveness**: Ensure smooth camera preview and color updates
@@ -142,3 +173,15 @@
 - Look up chosen frontend framework documentation for best practices
 - Reference camera API documentation for getUserMedia implementation
 - Consult color extraction library documentation for integration examples
+
+## Development Workflow
+- Use GitHub CLI for repository interactions
+- Commit incrementally with meaningful messages
+- Group related functionality in logical commit batches
+- Create a Makefile with emoji and ASCII colors for build/run commands
+
+## Documentation & Reference
+- Maintain a README.md with setup and usage instructions
+- Create a docs/Requirements.md for detailed functional scope
+- All code should have appropriate comments for live demo clarity
+- Reference Context7 documentation when implementing specific features
