@@ -1,78 +1,89 @@
 #!/bin/bash
 
 # Discover Shelly Color Bulbs on local network using mDNS
-echo "Discovering Shelly devices..."
-echo "Local DNS Name                    IP Address"
-echo "----------------------------------------"
+
+# Initialize variables
+found_devices=0
+temp_file="/tmp/shelly_discovery_$$"
+
+echo "🔍 Discovering Shelly devices on local network..."
+echo
 
 # Set a timeout for the entire discovery process
-timeout 15 dns-sd -B _http._tcp local. > /tmp/shelly_discovery.txt 2>&1 &
+timeout 15 dns-sd -B _http._tcp local. > "$temp_file" 2>/dev/null &
 discovery_pid=$!
 
-# Wait a bit for discovery to populate
+# Wait for discovery to populate
 sleep 5
 
 # Kill the discovery process
 kill $discovery_pid 2>/dev/null
+wait $discovery_pid 2>/dev/null
 
 # Process the results
-if [ -f /tmp/shelly_discovery.txt ]; then
-    grep shellycolorbulb /tmp/shelly_discovery.txt | while read line; do
+if [ -f "$temp_file" ]; then
+    # Create array to store devices
+    declare -a devices
+    
+    while IFS= read -r line; do
         # Extract the service name from the discovery output (last column)
         service_name=$(echo "$line" | awk '{print $NF}')
         
         if [ -n "$service_name" ]; then
-            echo "Found Shelly device: $service_name"
-            
             # Resolve the service to get IP address and port
-            timeout 5 dns-sd -L "$service_name" _http._tcp local. > /tmp/resolve_$$.txt 2>&1 &
+            resolve_file="/tmp/resolve_$$"
+            timeout 5 dns-sd -L "$service_name" _http._tcp local. > "$resolve_file" 2>/dev/null &
             resolve_pid=$!
             sleep 3
             kill $resolve_pid 2>/dev/null
+            wait $resolve_pid 2>/dev/null
             
-            if [ -f /tmp/resolve_$$.txt ]; then
+            if [ -f "$resolve_file" ]; then
                 # Look for the hostname in the resolve output (remove ANSI escape codes)
-                hostname=$(grep "can be reached at" /tmp/resolve_$$.txt | sed 's/\x1b\[[0-9;]*m//g' | awk '{print $7}' | sed 's/:.*$//' | head -1)
+                hostname=$(grep "can be reached at" "$resolve_file" | sed 's/\x1b\[[0-9;]*m//g' | awk '{print $7}' | sed 's/:.*$//' | head -1)
                 
                 if [ -n "$hostname" ]; then
-                    # Get IP address using multiple methods
-                    ip_address=""
-                    
-                    # Try ping first (most reliable for .local domains)
+                    # Get IP address using ping (most reliable for .local domains)
                     ip_address=$(timeout 3 ping -c 1 "$hostname" 2>/dev/null | grep "PING" | awk '{print $3}' | sed 's/[():]//g' | head -1)
                     
-                    # If that fails, try nslookup
-                    if [ -z "$ip_address" ]; then
-                        ip_address=$(timeout 3 nslookup "$hostname" 2>/dev/null | grep -A1 "Name:" | grep "Address:" | awk '{print $2}' | head -1)
-                    fi
-                    
-                    # If that fails, try dig
+                    # If ping fails, try dig
                     if [ -z "$ip_address" ]; then
                         ip_address=$(timeout 3 dig +short "$hostname" 2>/dev/null | head -1)
                     fi
                     
-                    # If that fails, try host
-                    if [ -z "$ip_address" ]; then
-                        ip_address=$(timeout 3 host "$hostname" 2>/dev/null | awk '{print $NF}' | head -1)
-                    fi
-                    
-                    # Output formatted result
+                    # Store device info
                     if [ -n "$ip_address" ]; then
-                        printf "%-30s %s\n" "$hostname" "$ip_address"
-                    else
-                        printf "%-30s %s\n" "$hostname" "Unable to resolve IP"
+                        devices+=("$hostname|$ip_address")
+                        ((found_devices++))
                     fi
                 fi
                 
-                rm -f /tmp/resolve_$$.txt
+                rm -f "$resolve_file"
             fi
         fi
-    done
+    done < <(grep -i shelly "$temp_file" 2>/dev/null)
+    
+    # Output results
+    if [ $found_devices -gt 0 ]; then
+        echo "✅ Found $found_devices Shelly device(s):"
+        echo
+        printf "%-35s %s\n" "Device Name" "IP Address"
+        printf "%-35s %s\n" "━━━━━━━━━━━" "━━━━━━━━━━"
+        
+        for device in "${devices[@]}"; do
+            hostname=$(echo "$device" | cut -d'|' -f1)
+            ip_address=$(echo "$device" | cut -d'|' -f2)
+            printf "%-35s %s\n" "$hostname" "$ip_address"
+        done
+    else
+        echo "❌ No Shelly devices found on the network"
+    fi
     
     # Clean up
-    rm -f /tmp/shelly_discovery.txt
+    rm -f "$temp_file"
 else
-    echo "No discovery results found"
+    echo "❌ Discovery failed - no results found"
 fi
 
-echo "Discovery complete."
+echo
+echo "🏁 Discovery complete."
