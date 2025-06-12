@@ -1,4 +1,6 @@
-We are building the Vibecoding RGBW Control App.
+We are vibecoding RGBW Control App.
+
+⚠️ **Remember:** Follow the planning protocol in copilot-instructions.md - create implementation plan first, get approval, then code.
 
 🧠 Context:
 This project is a live demo web app that uses webcam input to extract dominant colors and control a Shelly Duo GU10 RGBW bulb over the local network via HTTP.
