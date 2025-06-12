@@ -10,7 +10,7 @@ echo "🔍 Discovering Shelly devices on local network..."
 echo
 
 # Set a timeout for the entire discovery process
-timeout 15 dns-sd -B _http._tcp local. > "$temp_file" 2>/dev/null &
+gtimeout 15 dns-sd -B _http._tcp local. > "$temp_file" 2>/dev/null &
 discovery_pid=$!
 
 # Wait for discovery to populate
@@ -32,7 +32,7 @@ if [ -f "$temp_file" ]; then
         if [ -n "$service_name" ]; then
             # Resolve the service to get IP address and port
             resolve_file="/tmp/resolve_$$"
-            timeout 5 dns-sd -L "$service_name" _http._tcp local. > "$resolve_file" 2>/dev/null &
+            gtimeout 5 dns-sd -L "$service_name" _http._tcp local. > "$resolve_file" 2>/dev/null &
             resolve_pid=$!
             sleep 3
             kill $resolve_pid 2>/dev/null
@@ -44,11 +44,11 @@ if [ -f "$temp_file" ]; then
                 
                 if [ -n "$hostname" ]; then
                     # Get IP address using ping (most reliable for .local domains)
-                    ip_address=$(timeout 3 ping -c 1 "$hostname" 2>/dev/null | grep "PING" | awk '{print $3}' | sed 's/[():]//g' | head -1)
+                    ip_address=$(gtimeout 3 ping -c 1 "$hostname" 2>/dev/null | grep "PING" | awk '{print $3}' | sed 's/[():]//g' | head -1)
                     
                     # If ping fails, try dig
                     if [ -z "$ip_address" ]; then
-                        ip_address=$(timeout 3 dig +short "$hostname" 2>/dev/null | head -1)
+                        ip_address=$(gtimeout 3 dig +short "$hostname" 2>/dev/null | head -1)
                     fi
                     
                     # Store device info
