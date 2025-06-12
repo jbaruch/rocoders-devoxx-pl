@@ -59,6 +59,24 @@ Key patterns:
 * These instructions are derived from the canonical [Requirements](../docs/Requirements.md) document.
 * Use it for detailed functional scope, exclusions, and demo constraints.
 
+## 📋 Implementation Planning (MANDATORY)
+
+**BEFORE implementing any code, you MUST:**
+
+1. **Create a detailed implementation plan** in `docs/plan.md` that includes:
+   - Project structure breakdown (directories, files)
+   - Backend implementation steps (classes, methods, configuration)
+   - Frontend implementation steps (HTML structure, JS modules, UI components)
+   - Integration points between frontend and backend
+   - Testing approach for each component
+   - Estimated implementation order and dependencies
+
+2. **STOP and wait for user approval** of the plan before proceeding with any code implementation
+
+3. **Get explicit user confirmation** that the plan is acceptable before writing any source code
+
+> ⚠️ **CRITICAL**: Do not implement any code until the user has reviewed and approved the implementation plan. This ensures alignment and prevents wasted effort during the live demo.
+
 ## ✅ General Rules
 
 * Use Context7 for **every code block** involving Spring Boot, frontend browser APIs.
